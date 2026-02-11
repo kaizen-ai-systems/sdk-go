@@ -540,7 +540,7 @@ func NewClient(cfg *ClientConfig) *Client {
 		cfg = &ClientConfig{}
 	}
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://api.kaizen.run"
+		cfg.BaseURL = "https://api.kaizenaisystems.com"
 	}
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("KAIZEN_API_KEY")
