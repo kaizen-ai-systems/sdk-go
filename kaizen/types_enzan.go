@@ -26,6 +26,7 @@ type AlertType string
 
 const (
 	AlertCostThreshold  AlertType = "cost_threshold"
+	AlertCostAnomaly    AlertType = "cost_anomaly"
 	AlertUsageSpike     AlertType = "usage_spike"
 	AlertIdleResource   AlertType = "idle_resource"
 	AlertBudgetExceeded AlertType = "budget_exceeded"
@@ -70,6 +71,15 @@ type EnzanSummaryResponse struct {
 		GPUHours float64 `json:"gpu_hours"`
 		Requests int64   `json:"requests"`
 	} `json:"total"`
+	APICosts *APICostSummary `json:"apiCosts,omitempty"`
+}
+
+// APICostSummary represents estimated Akuma API token spend.
+type APICostSummary struct {
+	TotalCostUSD float64 `json:"totalCostUsd"`
+	PromptTokens int64   `json:"promptTokens"`
+	OutputTokens int64   `json:"outputTokens"`
+	Queries      int64   `json:"queries"`
 }
 
 // EnzanResource represents a GPU resource.
