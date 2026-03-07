@@ -19,6 +19,16 @@ const (
 	ModeExplain       QueryMode = "explain"
 )
 
+// AkumaSourceStatus is the persisted source sync state.
+type AkumaSourceStatus string
+
+const (
+	AkumaSourceStatusSyncing        AkumaSourceStatus = "syncing"
+	AkumaSourceStatusActive         AkumaSourceStatus = "active"
+	AkumaSourceStatusError          AkumaSourceStatus = "error"
+	AkumaSourceStatusSchemaTooLarge AkumaSourceStatus = "schema_too_large"
+)
+
 // Guardrails contains security constraints for queries.
 type Guardrails struct {
 	ReadOnly    bool     `json:"readOnly,omitempty"`
@@ -35,6 +45,7 @@ type AkumaQueryRequest struct {
 	Prompt     string      `json:"prompt"`
 	Mode       QueryMode   `json:"mode,omitempty"`
 	MaxRows    int         `json:"maxRows,omitempty"`
+	SourceID   string      `json:"sourceId,omitempty"`
 	Guardrails *Guardrails `json:"guardrails,omitempty"`
 }
 
@@ -79,14 +90,49 @@ type AkumaTable struct {
 	ForeignKeys []AkumaForeignKey `json:"foreignKeys,omitempty"`
 }
 
-// AkumaSchemaRequest sets schema context used by Akuma query generation.
+// AkumaSchemaRequest persists a manual schema source.
 type AkumaSchemaRequest struct {
-	Version string       `json:"version,omitempty"`
-	Tables  []AkumaTable `json:"tables"`
+	SourceID string       `json:"sourceId,omitempty"`
+	Name     string       `json:"name,omitempty"`
+	Dialect  SQLDialect   `json:"dialect"`
+	Version  string       `json:"version,omitempty"`
+	Tables   []AkumaTable `json:"tables"`
 }
 
-// AkumaSchemaResponse is the response from Akuma schema update.
-type AkumaSchemaResponse struct {
-	Status string `json:"status"`
-	Tables int    `json:"tables"`
+// AkumaCreateSourceRequest creates a live source.
+type AkumaCreateSourceRequest struct {
+	Name             string     `json:"name"`
+	Dialect          SQLDialect `json:"dialect"`
+	TargetSchemas    []string   `json:"targetSchemas,omitempty"`
+	ConnectionString string     `json:"connectionString"`
 }
+
+// AkumaSource is a persisted Akuma source.
+type AkumaSource struct {
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Dialect       SQLDialect        `json:"dialect"`
+	IsManual      bool              `json:"isManual"`
+	TargetSchemas []string          `json:"targetSchemas"`
+	Status        AkumaSourceStatus `json:"status"`
+	LastError     string            `json:"lastError,omitempty"`
+	LastSyncedAt  string            `json:"lastSyncedAt,omitempty"`
+	CreatedAt     string            `json:"createdAt"`
+	UpdatedAt     string            `json:"updatedAt"`
+}
+
+// AkumaSourcesResponse is the response from list sources.
+type AkumaSourcesResponse struct {
+	Sources []AkumaSource `json:"sources"`
+}
+
+// AkumaSourceMutationResponse is the response from source mutations.
+type AkumaSourceMutationResponse struct {
+	Status   string       `json:"status"`
+	SourceID string       `json:"sourceId,omitempty"`
+	Source   *AkumaSource `json:"source,omitempty"`
+	Tables   int          `json:"tables,omitempty"`
+}
+
+// AkumaSchemaResponse aliases the manual schema mutation response.
+type AkumaSchemaResponse = AkumaSourceMutationResponse

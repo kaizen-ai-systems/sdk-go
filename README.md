@@ -38,6 +38,8 @@ func main() {
 
 ## Akuma (NL->SQL)
 
+Persisted source APIs (`SetSchema`, `ListSources`, `CreateSource`, `SyncSource`, `DeleteSource`) require a dashboard-created DB-backed API key. Demo keys remain schema-less.
+
 ```go
 resp, err := client.Akuma.Query(ctx, &kaizen.AkumaQueryRequest{
     Dialect: kaizen.DialectPostgres,
@@ -51,6 +53,8 @@ resp, err := client.Akuma.Query(ctx, &kaizen.AkumaQueryRequest{
 })
 
 _, err = client.Akuma.SetSchema(ctx, &kaizen.AkumaSchemaRequest{
+    Name:    "Warehouse Manual Schema",
+    Dialect: kaizen.DialectPostgres,
     Version: "2026-02-17",
     Tables: []kaizen.AkumaTable{
         {
@@ -67,6 +71,34 @@ _, err = client.Akuma.SetSchema(ctx, &kaizen.AkumaSchemaRequest{
 })
 if err != nil {
     panic(err)
+}
+
+_, err = client.Akuma.Query(ctx, &kaizen.AkumaQueryRequest{
+    Dialect:  kaizen.DialectPostgres,
+    Prompt:   "Show revenue by month for 2025",
+    SourceID: "src_123",
+})
+if err != nil {
+    panic(err)
+}
+
+_, err = client.Akuma.CreateSource(ctx, &kaizen.AkumaCreateSourceRequest{
+    Name:             "Warehouse",
+    Dialect:          kaizen.DialectPostgres,
+    ConnectionString: "postgres://user:password@db.example.com:5432/app",
+    TargetSchemas:    []string{"public"},
+})
+if err != nil {
+    panic(err)
+}
+
+sources, err := client.Akuma.ListSources(ctx)
+if err != nil {
+    panic(err)
+}
+if len(sources.Sources) > 0 {
+    _, _ = client.Akuma.SyncSource(ctx, sources.Sources[0].ID)
+    _, _ = client.Akuma.DeleteSource(ctx, sources.Sources[0].ID)
 }
 ```
 
