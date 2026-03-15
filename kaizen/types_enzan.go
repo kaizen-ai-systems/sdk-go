@@ -45,14 +45,26 @@ type EnzanFilters struct {
 	Models    []string `json:"models,omitempty"`
 	Teams     []string `json:"teams,omitempty"`
 	Providers []string `json:"providers,omitempty"`
+	Endpoints []string `json:"endpoints,omitempty"`
 }
 
 // EnzanSummaryRow represents a row in the summary response.
 type EnzanSummaryRow struct {
-	Project   string  `json:"project,omitempty"`
-	Model     string  `json:"model,omitempty"`
-	Team      string  `json:"team,omitempty"`
-	Provider  string  `json:"provider,omitempty"`
+	Project    string  `json:"project,omitempty"`
+	Model      string  `json:"model,omitempty"`
+	Team       string  `json:"team,omitempty"`
+	Provider   string  `json:"provider,omitempty"`
+	Endpoint   string  `json:"endpoint,omitempty"`
+	CostUSD    float64 `json:"cost_usd"`
+	GPUHours   float64 `json:"gpu_hours"`
+	Requests   int64   `json:"requests"`
+	TokensIn   int64   `json:"tokens_in"`
+	TokensOut  int64   `json:"tokens_out"`
+	AvgUtilPct float64 `json:"avg_util_pct,omitempty"`
+}
+
+// EnzanSummaryTotal contains aggregate totals for a summary window.
+type EnzanSummaryTotal struct {
 	CostUSD   float64 `json:"cost_usd"`
 	GPUHours  float64 `json:"gpu_hours"`
 	Requests  int64   `json:"requests"`
@@ -66,12 +78,8 @@ type EnzanSummaryResponse struct {
 	StartTime string            `json:"startTime"`
 	EndTime   string            `json:"endTime"`
 	Rows      []EnzanSummaryRow `json:"rows"`
-	Total     struct {
-		CostUSD  float64 `json:"cost_usd"`
-		GPUHours float64 `json:"gpu_hours"`
-		Requests int64   `json:"requests"`
-	} `json:"total"`
-	APICosts *APICostSummary `json:"apiCosts,omitempty"`
+	Total     EnzanSummaryTotal `json:"total"`
+	APICosts  *APICostSummary   `json:"apiCosts,omitempty"`
 }
 
 // APICostSummary represents estimated Akuma API token spend.
@@ -89,18 +97,22 @@ type EnzanResource struct {
 	GPUType    string            `json:"gpuType"`
 	GPUCount   int               `json:"gpuCount"`
 	Region     string            `json:"region,omitempty"`
+	Endpoint   string            `json:"endpoint,omitempty"`
 	Labels     map[string]string `json:"labels,omitempty"`
 	HourlyRate float64           `json:"hourlyRate"`
+	CreatedAt  string            `json:"createdAt,omitempty"`
+	LastSeenAt string            `json:"lastSeenAt,omitempty"`
 }
 
 // EnzanAlert represents an alert configuration.
 type EnzanAlert struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Type      AlertType `json:"type"`
-	Threshold float64   `json:"threshold"`
-	Window    string    `json:"window"`
-	Enabled   bool      `json:"enabled"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Type      AlertType         `json:"type"`
+	Threshold float64           `json:"threshold"`
+	Window    string            `json:"window"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Enabled   bool              `json:"enabled"`
 }
 
 // EnzanBurnResponse is the response from Enzan burn.

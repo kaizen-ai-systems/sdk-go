@@ -26,12 +26,12 @@ type SozoGenerateRequest struct {
 
 // SozoColumnStats represents statistics for a column.
 type SozoColumnStats struct {
-	Type        string         `json:"type"`
-	Min         *float64       `json:"min,omitempty"`
-	Max         *float64       `json:"max,omitempty"`
-	Mean        *float64       `json:"mean,omitempty"`
-	UniqueCount *int           `json:"uniqueCount,omitempty"`
-	Values      map[string]int `json:"values,omitempty"`
+	Type      string   `json:"type"`
+	NullCount int      `json:"nullCount"`
+	Min       *float64 `json:"min,omitempty"`
+	Max       *float64 `json:"max,omitempty"`
+	Mean      *float64 `json:"mean,omitempty"`
+	StdDev    *float64 `json:"stdDev,omitempty"`
 }
 
 // SozoGenerateResponse is the response from Sozo generate.
@@ -87,6 +87,7 @@ func (r *SozoGenerateResponse) ToJSONL() (string, error) {
 
 // SozoSchemaInfo represents a predefined schema.
 type SozoSchemaInfo struct {
-	Name    string            `json:"name"`
-	Columns map[string]string `json:"columns"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Columns     map[string]string `json:"columns"`
 }

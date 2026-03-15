@@ -14,7 +14,9 @@ func TestEnzanSummaryResponseUnmarshalWithAPICosts(t *testing.T) {
 		"total": {
 			"cost_usd": 12.5,
 			"gpu_hours": 3.2,
-			"requests": 10
+			"requests": 10,
+			"tokens_in": 1000,
+			"tokens_out": 200
 		},
 		"apiCosts": {
 			"totalCostUsd": 0.42,
@@ -36,6 +38,9 @@ func TestEnzanSummaryResponseUnmarshalWithAPICosts(t *testing.T) {
 	}
 	if got.APICosts.Queries != 5 {
 		t.Fatalf("unexpected queries: %d", got.APICosts.Queries)
+	}
+	if got.Total.TokensIn != 1000 || got.Total.TokensOut != 200 {
+		t.Fatalf("unexpected total tokens: %+v", got.Total)
 	}
 }
 
