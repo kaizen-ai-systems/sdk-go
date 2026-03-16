@@ -25,6 +25,20 @@ func (c *EnzanClient) Summary(ctx context.Context, req *EnzanSummaryRequest) (*E
 	return &resp, nil
 }
 
+// CostsByModel gets model-level API cost analytics for a time window.
+func (c *EnzanClient) CostsByModel(ctx context.Context, req *EnzanModelCostRequest) (*EnzanModelCostResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/costs/by-model", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanModelCostResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan costs by model response: %w", err)
+	}
+	return &resp, nil
+}
+
 // Burn gets current burn rate.
 func (c *EnzanClient) Burn(ctx context.Context) (*EnzanBurnResponse, error) {
 	data, err := c.http.get(ctx, "/v1/enzan/burn")

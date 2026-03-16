@@ -114,6 +114,16 @@ if err != nil {
 }
 
 fmt.Printf("Total: $%.2f\n", summary.Total.CostUSD)
+
+byModel, err := client.Enzan.CostsByModel(ctx, &kaizen.EnzanModelCostRequest{
+    Window: kaizen.Window30Day,
+})
+if err != nil {
+    panic(err)
+}
+for _, row := range byModel.Rows {
+    fmt.Printf("%s: $%.2f (%d queries)\n", row.Model, row.CostUSD, row.Queries)
+}
 ```
 
 ## Sozo (Synthetic Data)

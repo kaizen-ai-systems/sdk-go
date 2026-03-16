@@ -39,6 +39,11 @@ type EnzanSummaryRequest struct {
 	Filters *EnzanFilters      `json:"filters,omitempty"`
 }
 
+// EnzanModelCostRequest is the request for model-level cost analytics.
+type EnzanModelCostRequest struct {
+	Window TimeWindow `json:"window"`
+}
+
 // EnzanFilters contains filters for Enzan queries.
 type EnzanFilters struct {
 	Projects  []string `json:"projects,omitempty"`
@@ -80,6 +85,46 @@ type EnzanSummaryResponse struct {
 	Rows      []EnzanSummaryRow `json:"rows"`
 	Total     EnzanSummaryTotal `json:"total"`
 	APICosts  *APICostSummary   `json:"apiCosts,omitempty"`
+}
+
+// EnzanModelCategoryBreakdown represents prompt complexity distribution per model.
+type EnzanModelCategoryBreakdown struct {
+	Category        string  `json:"category"`
+	Queries         int64   `json:"queries"`
+	PromptTokens    int64   `json:"prompt_tokens"`
+	OutputTokens    int64   `json:"output_tokens"`
+	CostUSD         float64 `json:"cost_usd"`
+	Percentage      float64 `json:"percentage"`
+	AvgCostPerQuery float64 `json:"avg_cost_per_query"`
+}
+
+// EnzanModelCostRow represents a single model row in the cost breakdown response.
+type EnzanModelCostRow struct {
+	Model           string                        `json:"model"`
+	Queries         int64                         `json:"queries"`
+	PromptTokens    int64                         `json:"prompt_tokens"`
+	OutputTokens    int64                         `json:"output_tokens"`
+	CostUSD         float64                       `json:"cost_usd"`
+	Percentage      float64                       `json:"percentage"`
+	AvgCostPerQuery float64                       `json:"avg_cost_per_query"`
+	Categories      []EnzanModelCategoryBreakdown `json:"categories,omitempty"`
+}
+
+// EnzanModelCostTotal contains aggregate totals for model-level spend.
+type EnzanModelCostTotal struct {
+	Queries      int64   `json:"queries"`
+	PromptTokens int64   `json:"prompt_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	CostUSD      float64 `json:"cost_usd"`
+}
+
+// EnzanModelCostResponse is the response from model-level cost analytics.
+type EnzanModelCostResponse struct {
+	Window    string              `json:"window"`
+	StartTime string              `json:"startTime"`
+	EndTime   string              `json:"endTime"`
+	Rows      []EnzanModelCostRow `json:"rows"`
+	Total     EnzanModelCostTotal `json:"total"`
 }
 
 // APICostSummary represents estimated Akuma API token spend.
