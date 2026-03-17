@@ -39,6 +39,66 @@ func (c *EnzanClient) CostsByModel(ctx context.Context, req *EnzanModelCostReque
 	return &resp, nil
 }
 
+// ListModelPricing lists configured LLM pricing entries.
+func (c *EnzanClient) ListModelPricing(ctx context.Context) ([]EnzanLLMPricing, error) {
+	data, err := c.http.get(ctx, "/v1/enzan/pricing/models")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Models []EnzanLLMPricing `json:"models"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan model pricing response: %w", err)
+	}
+	return resp.Models, nil
+}
+
+// UpsertModelPricing upserts one LLM pricing entry.
+func (c *EnzanClient) UpsertModelPricing(ctx context.Context, req *EnzanLLMPricingUpsertRequest) (*EnzanLLMPricingMutationResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/pricing/models", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanLLMPricingMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan model pricing mutation response: %w", err)
+	}
+	return &resp, nil
+}
+
+// ListGPUPricing lists configured GPU pricing entries.
+func (c *EnzanClient) ListGPUPricing(ctx context.Context) ([]EnzanGPUPricing, error) {
+	data, err := c.http.get(ctx, "/v1/enzan/pricing/gpus")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		GPUs []EnzanGPUPricing `json:"gpus"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan GPU pricing response: %w", err)
+	}
+	return resp.GPUs, nil
+}
+
+// UpsertGPUPricing upserts one GPU pricing entry.
+func (c *EnzanClient) UpsertGPUPricing(ctx context.Context, req *EnzanGPUPricingUpsertRequest) (*EnzanGPUPricingMutationResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/pricing/gpus", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanGPUPricingMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan GPU pricing mutation response: %w", err)
+	}
+	return &resp, nil
+}
+
 // Burn gets current burn rate.
 func (c *EnzanClient) Burn(ctx context.Context) (*EnzanBurnResponse, error) {
 	data, err := c.http.get(ctx, "/v1/enzan/burn")

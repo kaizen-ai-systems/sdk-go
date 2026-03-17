@@ -111,3 +111,45 @@ func TestEnzanModelCostResponseUnmarshal(t *testing.T) {
 		t.Fatalf("unexpected categories: %+v", got.Rows[0].Categories)
 	}
 }
+
+func TestEnzanPricingResponsesUnmarshal(t *testing.T) {
+	listInput := []byte(`{
+		"models": [{
+			"provider": "openai",
+			"model": "gpt-4o-mini",
+			"display_name": "GPT-4o mini",
+			"input_cost_per_1k_tokens_usd": 0.00015,
+			"output_cost_per_1k_tokens_usd": 0.0006,
+			"currency": "USD",
+			"active": true
+		}]
+	}`)
+	var listResp struct {
+		Models []EnzanLLMPricing `json:"models"`
+	}
+	if err := json.Unmarshal(listInput, &listResp); err != nil {
+		t.Fatalf("unexpected model pricing unmarshal error: %v", err)
+	}
+	if len(listResp.Models) != 1 || listResp.Models[0].Model != "gpt-4o-mini" {
+		t.Fatalf("unexpected model pricing rows: %+v", listResp.Models)
+	}
+
+	mutationInput := []byte(`{
+		"status": "upserted",
+		"pricing": {
+			"provider": "runpod",
+			"gpu_type": "h100",
+			"display_name": "H100",
+			"hourly_rate_usd": 1.99,
+			"currency": "USD",
+			"active": true
+		}
+	}`)
+	var mutationResp EnzanGPUPricingMutationResponse
+	if err := json.Unmarshal(mutationInput, &mutationResp); err != nil {
+		t.Fatalf("unexpected gpu pricing mutation unmarshal error: %v", err)
+	}
+	if mutationResp.Status != "upserted" || mutationResp.Pricing.GPUType != "h100" {
+		t.Fatalf("unexpected gpu pricing mutation response: %+v", mutationResp)
+	}
+}

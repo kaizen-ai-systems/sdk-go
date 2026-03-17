@@ -44,6 +44,27 @@ type EnzanModelCostRequest struct {
 	Window TimeWindow `json:"window"`
 }
 
+// EnzanLLMPricingUpsertRequest is the request for LLM pricing upserts.
+type EnzanLLMPricingUpsertRequest struct {
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	DisplayName              string  `json:"display_name,omitempty"`
+	InputCostPer1KTokensUSD  float64 `json:"input_cost_per_1k_tokens_usd"`
+	OutputCostPer1KTokensUSD float64 `json:"output_cost_per_1k_tokens_usd"`
+	Currency                 string  `json:"currency,omitempty"`
+	Active                   *bool   `json:"active,omitempty"`
+}
+
+// EnzanGPUPricingUpsertRequest is the request for GPU pricing upserts.
+type EnzanGPUPricingUpsertRequest struct {
+	Provider      string  `json:"provider"`
+	GPUType       string  `json:"gpu_type"`
+	DisplayName   string  `json:"display_name,omitempty"`
+	HourlyRateUSD float64 `json:"hourly_rate_usd"`
+	Currency      string  `json:"currency,omitempty"`
+	Active        *bool   `json:"active,omitempty"`
+}
+
 // EnzanFilters contains filters for Enzan queries.
 type EnzanFilters struct {
 	Projects  []string `json:"projects,omitempty"`
@@ -125,6 +146,39 @@ type EnzanModelCostResponse struct {
 	EndTime   string              `json:"endTime"`
 	Rows      []EnzanModelCostRow `json:"rows"`
 	Total     EnzanModelCostTotal `json:"total"`
+}
+
+// EnzanLLMPricing represents one LLM pricing catalog row.
+type EnzanLLMPricing struct {
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	DisplayName              string  `json:"display_name"`
+	InputCostPer1KTokensUSD  float64 `json:"input_cost_per_1k_tokens_usd"`
+	OutputCostPer1KTokensUSD float64 `json:"output_cost_per_1k_tokens_usd"`
+	Currency                 string  `json:"currency"`
+	Active                   bool    `json:"active"`
+}
+
+// EnzanGPUPricing represents one GPU pricing catalog row.
+type EnzanGPUPricing struct {
+	Provider      string  `json:"provider"`
+	GPUType       string  `json:"gpu_type"`
+	DisplayName   string  `json:"display_name"`
+	HourlyRateUSD float64 `json:"hourly_rate_usd"`
+	Currency      string  `json:"currency"`
+	Active        bool    `json:"active"`
+}
+
+// EnzanLLMPricingMutationResponse is the upsert response for model pricing.
+type EnzanLLMPricingMutationResponse struct {
+	Status  string          `json:"status"`
+	Pricing EnzanLLMPricing `json:"pricing"`
+}
+
+// EnzanGPUPricingMutationResponse is the upsert response for GPU pricing.
+type EnzanGPUPricingMutationResponse struct {
+	Status  string          `json:"status"`
+	Pricing EnzanGPUPricing `json:"pricing"`
 }
 
 // APICostSummary represents estimated Akuma API token spend.

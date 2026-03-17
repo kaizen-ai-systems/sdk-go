@@ -124,6 +124,14 @@ if err != nil {
 for _, row := range byModel.Rows {
     fmt.Printf("%s: $%.2f (%d queries)\n", row.Model, row.CostUSD, row.Queries)
 }
+
+pricing, err := client.Enzan.ListModelPricing(ctx)
+if err != nil {
+    panic(err)
+}
+for _, row := range pricing {
+    fmt.Printf("%s %s: $%.5f / $%.5f per 1K tokens\n", row.Provider, row.Model, row.InputCostPer1KTokensUSD, row.OutputCostPer1KTokensUSD)
+}
 ```
 
 ## Sozo (Synthetic Data)
