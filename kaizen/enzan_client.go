@@ -156,3 +156,16 @@ func (c *EnzanClient) CreateAlert(ctx context.Context, alert *EnzanAlert) error 
 	_, err := c.http.post(ctx, "/v1/enzan/alerts", alert)
 	return err
 }
+
+// Optimize generates cost optimization recommendations for a time window.
+func (c *EnzanClient) Optimize(ctx context.Context, req *EnzanOptimizeRequest) (*EnzanOptimizeResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/optimize", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp EnzanOptimizeResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan optimize response: %w", err)
+	}
+	return &resp, nil
+}

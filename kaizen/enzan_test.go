@@ -153,3 +153,35 @@ func TestEnzanPricingResponsesUnmarshal(t *testing.T) {
 		t.Fatalf("unexpected gpu pricing mutation response: %+v", mutationResp)
 	}
 }
+
+func TestEnzanOptimizeResponseUnmarshal(t *testing.T) {
+	raw := `{
+		"window":"30d",
+		"startTime":"2026-03-01T00:00:00Z",
+		"endTime":"2026-03-31T00:00:00Z",
+		"efficiencyScore":85,
+		"monthlySpend":100.50,
+		"potentialSavings":15.25,
+		"recommendations":[{
+			"type":"model_downgrade",
+			"title":"Downgrade simple queries",
+			"description":"50% of queries are simple",
+			"estimatedSavings":15.25,
+			"confidence":0.8,
+			"suggestion":"Route to cheaper model"
+		}]
+	}`
+	var resp EnzanOptimizeResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.EfficiencyScore != 85 {
+		t.Fatalf("expected score 85, got %d", resp.EfficiencyScore)
+	}
+	if len(resp.Recommendations) != 1 {
+		t.Fatalf("expected 1 recommendation, got %d", len(resp.Recommendations))
+	}
+	if resp.Recommendations[0].Type != EnzanRecModelDowngrade {
+		t.Fatalf("expected type model_downgrade, got %s", resp.Recommendations[0].Type)
+	}
+}

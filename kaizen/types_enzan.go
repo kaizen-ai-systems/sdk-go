@@ -219,3 +219,42 @@ type EnzanBurnResponse struct {
 	BurnRateUSDPerHour float64 `json:"burn_rate_usd_per_hour"`
 	Timestamp          string  `json:"timestamp"`
 }
+
+// EnzanRecommendationType identifies the optimizer rule.
+type EnzanRecommendationType string
+
+const (
+	EnzanRecModelDowngrade    EnzanRecommendationType = "model_downgrade"
+	EnzanRecDuplicateCaching  EnzanRecommendationType = "duplicate_caching"
+	EnzanRecSelfHostBreakeven EnzanRecommendationType = "self_host_breakeven"
+	EnzanRecSpendAnomaly      EnzanRecommendationType = "spend_anomaly"
+	EnzanRecPriceArbitrage    EnzanRecommendationType = "price_arbitrage"
+)
+
+// EnzanOptimizeRequest is the request for the optimizer.
+type EnzanOptimizeRequest struct {
+	Window TimeWindow `json:"window"`
+}
+
+// EnzanRecommendation represents a single optimization suggestion.
+type EnzanRecommendation struct {
+	Type             EnzanRecommendationType `json:"type"`
+	Title            string                  `json:"title"`
+	Description      string                  `json:"description"`
+	EstimatedSavings float64                 `json:"estimatedSavings"`
+	Confidence       float64                 `json:"confidence"`
+	Suggestion       string                  `json:"suggestion"`
+}
+
+// EnzanOptimizeResponse is the response from the optimizer.
+// PotentialSavings is a heuristic upper bound; individual recommendations
+// may address overlapping spend, so actual realizable savings may be lower.
+type EnzanOptimizeResponse struct {
+	Window           string                `json:"window"`
+	StartTime        string                `json:"startTime"`
+	EndTime          string                `json:"endTime"`
+	EfficiencyScore  int                   `json:"efficiencyScore"`
+	MonthlySpend     float64               `json:"monthlySpend"`
+	PotentialSavings float64               `json:"potentialSavings"`
+	Recommendations  []EnzanRecommendation `json:"recommendations"`
+}
