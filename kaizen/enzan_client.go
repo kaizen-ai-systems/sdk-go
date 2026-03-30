@@ -169,3 +169,16 @@ func (c *EnzanClient) Optimize(ctx context.Context, req *EnzanOptimizeRequest) (
 	}
 	return &resp, nil
 }
+
+// Chat sends a conversational AI cost Q&A message with optional multi-turn support.
+func (c *EnzanClient) Chat(ctx context.Context, req *EnzanChatRequest) (*EnzanChatResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/chat", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp EnzanChatResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan chat response: %w", err)
+	}
+	return &resp, nil
+}

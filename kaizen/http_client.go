@@ -100,6 +100,7 @@ func (c *httpClient) request(ctx context.Context, method, path string, body inte
 			Message:   parseAPIErrorMessage(resp.StatusCode, respBody),
 			Status:    resp.StatusCode,
 			RequestID: requestID,
+			Data:      parseAPIErrorData(respBody),
 		}
 	}
 
@@ -132,6 +133,15 @@ func (c *httpClient) snapshotConfig() (baseURL string, apiKey string) {
 	apiKey = c.apiKey
 	c.mu.RUnlock()
 	return
+}
+
+// parseAPIErrorData extracts all fields from an error response body.
+func parseAPIErrorData(body []byte) map[string]interface{} {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	return data
 }
 
 func parseAPIErrorMessage(status int, body []byte) string {

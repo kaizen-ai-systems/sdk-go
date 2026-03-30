@@ -6,6 +6,7 @@ type KaizenError struct {
 	Status    int
 	Code      string
 	RequestID string
+	Data      map[string]interface{} // Extra fields from the error response body.
 }
 
 func (e *KaizenError) Error() string {

@@ -258,3 +258,27 @@ type EnzanOptimizeResponse struct {
 	PotentialSavings float64               `json:"potentialSavings"`
 	Recommendations  []EnzanRecommendation `json:"recommendations"`
 }
+
+// EnzanChatRequest is the request for conversational AI cost Q&A.
+type EnzanChatRequest struct {
+	Message        string `json:"message"`
+	ConversationID string `json:"conversationId,omitempty"`
+	Window         string `json:"window,omitempty"`
+}
+
+// EnzanSuggestedAction is a typed action chip from the chat response.
+type EnzanSuggestedAction struct {
+	Type   string `json:"type"`  // set_window, view_summary, view_costs_by_model, view_optimizer, view_model_pricing, view_gpu_pricing
+	Label  string `json:"label"`
+	Window string `json:"window,omitempty"`
+	Model  string `json:"model,omitempty"`
+}
+
+// EnzanChatResponse is the response from the chat endpoint.
+type EnzanChatResponse struct {
+	ConversationID   string                 `json:"conversationId"`
+	Message          string                 `json:"message"`
+	EffectiveWindow  string                 `json:"effectiveWindow,omitempty"`
+	SuggestedActions []EnzanSuggestedAction `json:"suggestedActions"`
+	SupportingData   map[string]any         `json:"supportingData,omitempty"`
+}
