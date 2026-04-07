@@ -2,6 +2,7 @@ package kaizen
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -183,5 +184,57 @@ func TestEnzanOptimizeResponseUnmarshal(t *testing.T) {
 	}
 	if resp.Recommendations[0].Type != EnzanRecModelDowngrade {
 		t.Fatalf("expected type model_downgrade, got %s", resp.Recommendations[0].Type)
+	}
+}
+
+func TestValidateCreateAlertRequestRequiresWindowForCostThreshold(t *testing.T) {
+	threshold := 100.0
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name:      "High spend",
+		Type:      CreatableAlertCostThreshold,
+		Threshold: &threshold,
+	})
+	if err == nil {
+		t.Fatal("expected validation error for missing window")
+	}
+	if !strings.Contains(err.Error(), "window is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateCreateAlertRequestRequiresThresholdForBudgetExceeded(t *testing.T) {
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name: "Budget",
+		Type: CreatableAlertBudgetExceeded,
+	})
+	if err == nil {
+		t.Fatal("expected validation error for missing threshold")
+	}
+	if !strings.Contains(err.Error(), "threshold is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateCreateAlertRequestAllowsOptimizationAvailableWithoutWindow(t *testing.T) {
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name: "Optimizer",
+		Type: CreatableAlertOptimizationAvailable,
+	})
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestValidateCreateAlertRequestRejectsNon24HourDailySummaryWindow(t *testing.T) {
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name:   "Daily summary",
+		Type:   CreatableAlertDailySummary,
+		Window: "7d",
+	})
+	if err == nil {
+		t.Fatal("expected validation error for invalid daily_summary window")
+	}
+	if !strings.Contains(err.Error(), "window must be 24h") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

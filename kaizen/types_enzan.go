@@ -25,11 +25,25 @@ const (
 type AlertType string
 
 const (
-	AlertCostThreshold  AlertType = "cost_threshold"
-	AlertCostAnomaly    AlertType = "cost_anomaly"
-	AlertUsageSpike     AlertType = "usage_spike"
-	AlertIdleResource   AlertType = "idle_resource"
-	AlertBudgetExceeded AlertType = "budget_exceeded"
+	AlertCostThreshold         AlertType = "cost_threshold"
+	AlertCostAnomaly           AlertType = "cost_anomaly"
+	AlertUsageSpike            AlertType = "usage_spike"
+	AlertIdleResource          AlertType = "idle_resource"
+	AlertBudgetExceeded        AlertType = "budget_exceeded"
+	AlertOptimizationAvailable AlertType = "optimization_available"
+	AlertPricingChange         AlertType = "pricing_change"
+	AlertDailySummary          AlertType = "daily_summary"
+)
+
+// CreatableAlertType represents the currently supported alert-create surface.
+type CreatableAlertType string
+
+const (
+	CreatableAlertCostThreshold         CreatableAlertType = "cost_threshold"
+	CreatableAlertBudgetExceeded        CreatableAlertType = "budget_exceeded"
+	CreatableAlertOptimizationAvailable CreatableAlertType = "optimization_available"
+	CreatableAlertPricingChange         CreatableAlertType = "pricing_change"
+	CreatableAlertDailySummary          CreatableAlertType = "daily_summary"
 )
 
 // EnzanSummaryRequest is the request for Enzan summary.
@@ -214,6 +228,75 @@ type EnzanAlert struct {
 	Enabled   bool              `json:"enabled"`
 }
 
+// EnzanCreateAlertRequest is the request for creating an alert.
+type EnzanCreateAlertRequest struct {
+	ID        string             `json:"id,omitempty"`
+	Name      string             `json:"name"`
+	Type      CreatableAlertType `json:"type"`
+	Threshold *float64           `json:"threshold,omitempty"`
+	// Window is required when Type is cost_threshold, defaults to 30d for
+	// optimization_available, must be omitted or set to 24h for daily_summary,
+	// and is ignored for pricing_change.
+	Window  string            `json:"window,omitempty"`
+	Labels  map[string]string `json:"labels,omitempty"`
+	Enabled *bool             `json:"enabled,omitempty"`
+}
+
+// StatusWithIDResponse is the generic mutation response for created resources.
+type StatusWithIDResponse struct {
+	Status string `json:"status"`
+	ID     string `json:"id"`
+}
+
+// EnzanAlertEndpoint represents one webhook delivery endpoint for Enzan alerts.
+type EnzanAlertEndpoint struct {
+	ID               string `json:"id"`
+	Kind             string `json:"kind"`
+	TargetURL        string `json:"targetUrl"`
+	HasSigningSecret bool   `json:"hasSigningSecret"`
+	Enabled          bool   `json:"enabled"`
+	LastUsedAt       string `json:"lastUsedAt,omitempty"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+}
+
+// EnzanAlertEndpointCreateRequest is the request for creating a webhook endpoint.
+type EnzanAlertEndpointCreateRequest struct {
+	TargetURL     string `json:"targetUrl"`
+	SigningSecret string `json:"signingSecret,omitempty"`
+}
+
+// EnzanAlertEndpointMutationResponse is the create response for one endpoint.
+type EnzanAlertEndpointMutationResponse struct {
+	Status   string             `json:"status"`
+	Endpoint EnzanAlertEndpoint `json:"endpoint"`
+}
+
+// EnzanAlertEvent represents one fired alert event.
+type EnzanAlertEvent struct {
+	ID          string                 `json:"id"`
+	RuleID      string                 `json:"ruleId,omitempty"`
+	Type        AlertType              `json:"type"`
+	DedupeKey   string                 `json:"dedupeKey"`
+	Payload     map[string]interface{} `json:"payload"`
+	TriggeredAt string                 `json:"triggeredAt"`
+}
+
+// EnzanAlertDelivery represents one delivery attempt/status row for an alert event.
+type EnzanAlertDelivery struct {
+	ID               string `json:"id"`
+	EventID          string `json:"eventId"`
+	EndpointID       string `json:"endpointId,omitempty"`
+	Status           string `json:"status"`
+	RetryCount       int    `json:"retryCount"`
+	NextRetryAt      string `json:"nextRetryAt"`
+	LastAttemptedAt  string `json:"lastAttemptedAt,omitempty"`
+	LastResponseCode *int   `json:"lastResponseCode,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+}
+
 // EnzanBurnResponse is the response from Enzan burn.
 type EnzanBurnResponse struct {
 	BurnRateUSDPerHour float64 `json:"burn_rate_usd_per_hour"`
@@ -268,7 +351,7 @@ type EnzanChatRequest struct {
 
 // EnzanSuggestedAction is a typed action chip from the chat response.
 type EnzanSuggestedAction struct {
-	Type   string `json:"type"`  // set_window, view_summary, view_costs_by_model, view_optimizer, view_model_pricing, view_gpu_pricing
+	Type   string `json:"type"` // set_window, view_summary, view_costs_by_model, view_optimizer, view_model_pricing, view_gpu_pricing
 	Label  string `json:"label"`
 	Window string `json:"window,omitempty"`
 	Model  string `json:"model,omitempty"`

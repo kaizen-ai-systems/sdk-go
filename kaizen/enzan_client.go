@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
 )
 
 // EnzanClient is the client for Enzan API.
@@ -151,9 +154,120 @@ func (c *EnzanClient) ListAlerts(ctx context.Context) ([]EnzanAlert, error) {
 	return resp.Alerts, nil
 }
 
-// CreateAlert creates an alert.
-func (c *EnzanClient) CreateAlert(ctx context.Context, alert *EnzanAlert) error {
-	_, err := c.http.post(ctx, "/v1/enzan/alerts", alert)
+// CreateAlert creates an alert using the currently live Phase 6a evaluator subset.
+func (c *EnzanClient) CreateAlert(ctx context.Context, alert *EnzanCreateAlertRequest) (*StatusWithIDResponse, error) {
+	if err := validateCreateAlertRequest(alert); err != nil {
+		return nil, err
+	}
+	data, err := c.http.post(ctx, "/v1/enzan/alerts", alert)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp StatusWithIDResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan create alert response: %w", err)
+	}
+	return &resp, nil
+}
+
+func validateCreateAlertRequest(alert *EnzanCreateAlertRequest) error {
+	if alert == nil {
+		return fmt.Errorf("alert is required")
+	}
+	switch alert.Type {
+	case CreatableAlertCostThreshold:
+		if alert.Threshold == nil {
+			return fmt.Errorf("threshold is required for alert type %s", alert.Type)
+		}
+		if strings.TrimSpace(alert.Window) == "" {
+			return fmt.Errorf("window is required for alert type %s", alert.Type)
+		}
+	case CreatableAlertBudgetExceeded:
+		if alert.Threshold == nil {
+			return fmt.Errorf("threshold is required for alert type %s", alert.Type)
+		}
+	case CreatableAlertDailySummary:
+		if window := strings.TrimSpace(alert.Window); window != "" && window != "24h" {
+			return fmt.Errorf("window must be 24h for alert type %s", alert.Type)
+		}
+	}
+	return nil
+}
+
+// ListAlertEndpoints lists configured Enzan alert delivery endpoints.
+func (c *EnzanClient) ListAlertEndpoints(ctx context.Context) ([]EnzanAlertEndpoint, error) {
+	data, err := c.http.get(ctx, "/v1/enzan/alerts/endpoints")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Endpoints []EnzanAlertEndpoint `json:"endpoints"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan alert endpoints response: %w", err)
+	}
+	return resp.Endpoints, nil
+}
+
+// CreateAlertEndpoint creates one Enzan alert delivery webhook endpoint.
+func (c *EnzanClient) CreateAlertEndpoint(ctx context.Context, req *EnzanAlertEndpointCreateRequest) (*EnzanAlertEndpointMutationResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/alerts/endpoints", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanAlertEndpointMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan alert endpoint mutation response: %w", err)
+	}
+	return &resp, nil
+}
+
+// ListAlertEvents lists recent Enzan alert events.
+func (c *EnzanClient) ListAlertEvents(ctx context.Context, limit int) ([]EnzanAlertEvent, error) {
+	path := "/v1/enzan/alerts/events"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	data, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Events []EnzanAlertEvent `json:"events"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan alert events response: %w", err)
+	}
+	return resp.Events, nil
+}
+
+// ListAlertDeliveries lists recent Enzan alert deliveries.
+func (c *EnzanClient) ListAlertDeliveries(ctx context.Context, limit int) ([]EnzanAlertDelivery, error) {
+	path := "/v1/enzan/alerts/deliveries"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	data, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Deliveries []EnzanAlertDelivery `json:"deliveries"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan alert deliveries response: %w", err)
+	}
+	return resp.Deliveries, nil
+}
+
+// DeleteAlertEndpoint deletes one Enzan alert delivery webhook endpoint.
+func (c *EnzanClient) DeleteAlertEndpoint(ctx context.Context, id string) error {
+	_, err := c.http.request(ctx, "DELETE", "/v1/enzan/alerts/endpoints/"+url.PathEscape(id), nil)
 	return err
 }
 
