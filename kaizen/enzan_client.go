@@ -171,6 +171,26 @@ func (c *EnzanClient) CreateAlert(ctx context.Context, alert *EnzanCreateAlertRe
 	return &resp, nil
 }
 
+// UpdateAlert updates one configured alert.
+func (c *EnzanClient) UpdateAlert(ctx context.Context, id string, alert *EnzanUpdateAlertRequest) (*EnzanAlertMutationResponse, error) {
+	data, err := c.http.request(ctx, "PATCH", "/v1/enzan/alerts/"+url.PathEscape(id), alert)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanAlertMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan update alert response: %w", err)
+	}
+	return &resp, nil
+}
+
+// DeleteAlert deletes one configured alert.
+func (c *EnzanClient) DeleteAlert(ctx context.Context, id string) error {
+	_, err := c.http.request(ctx, "DELETE", "/v1/enzan/alerts/"+url.PathEscape(id), nil)
+	return err
+}
+
 func validateCreateAlertRequest(alert *EnzanCreateAlertRequest) error {
 	if alert == nil {
 		return fmt.Errorf("alert is required")
@@ -214,6 +234,20 @@ func (c *EnzanClient) ListAlertEndpoints(ctx context.Context) ([]EnzanAlertEndpo
 // CreateAlertEndpoint creates one Enzan alert delivery webhook endpoint.
 func (c *EnzanClient) CreateAlertEndpoint(ctx context.Context, req *EnzanAlertEndpointCreateRequest) (*EnzanAlertEndpointMutationResponse, error) {
 	data, err := c.http.post(ctx, "/v1/enzan/alerts/endpoints", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanAlertEndpointMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan alert endpoint mutation response: %w", err)
+	}
+	return &resp, nil
+}
+
+// UpdateAlertEndpoint updates one Enzan alert delivery webhook endpoint.
+func (c *EnzanClient) UpdateAlertEndpoint(ctx context.Context, id string, req *EnzanAlertEndpointUpdateRequest) (*EnzanAlertEndpointMutationResponse, error) {
+	data, err := c.http.request(ctx, "PATCH", "/v1/enzan/alerts/endpoints/"+url.PathEscape(id), req)
 	if err != nil {
 		return nil, err
 	}

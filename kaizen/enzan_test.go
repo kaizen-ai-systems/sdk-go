@@ -238,3 +238,41 @@ func TestValidateCreateAlertRequestRejectsNon24HourDailySummaryWindow(t *testing
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestUpdateAlertRequestMarshalIncludesEmptyWindowAndLabels(t *testing.T) {
+	window := ""
+	labels := map[string]string{}
+	req := EnzanUpdateAlertRequest{
+		Window: &window,
+		Labels: &labels,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal update alert request: %v", err)
+	}
+	if !strings.Contains(string(data), `"window":""`) {
+		t.Fatalf("expected empty window to be preserved, got %s", string(data))
+	}
+	if !strings.Contains(string(data), `"labels":{}`) {
+		t.Fatalf("expected empty labels object to be preserved, got %s", string(data))
+	}
+}
+
+func TestUpdateAlertEndpointRequestMarshalIncludesEmptySigningSecret(t *testing.T) {
+	targetURL := ""
+	signingSecret := ""
+	req := EnzanAlertEndpointUpdateRequest{
+		TargetURL:     &targetURL,
+		SigningSecret: &signingSecret,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal update alert endpoint request: %v", err)
+	}
+	if !strings.Contains(string(data), `"targetUrl":""`) {
+		t.Fatalf("expected empty targetUrl to be preserved, got %s", string(data))
+	}
+	if !strings.Contains(string(data), `"signingSecret":""`) {
+		t.Fatalf("expected empty signingSecret to be preserved, got %s", string(data))
+	}
+}

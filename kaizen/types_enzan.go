@@ -242,10 +242,25 @@ type EnzanCreateAlertRequest struct {
 	Enabled *bool             `json:"enabled,omitempty"`
 }
 
+// EnzanUpdateAlertRequest is the request for updating an alert.
+type EnzanUpdateAlertRequest struct {
+	Name      *string            `json:"name,omitempty"`
+	Threshold *float64           `json:"threshold,omitempty"`
+	Window    *string            `json:"window,omitempty"`
+	Labels    *map[string]string `json:"labels,omitempty"`
+	Enabled   *bool              `json:"enabled,omitempty"`
+}
+
 // StatusWithIDResponse is the generic mutation response for created resources.
 type StatusWithIDResponse struct {
 	Status string `json:"status"`
 	ID     string `json:"id"`
+}
+
+// EnzanAlertMutationResponse is the update response for one alert.
+type EnzanAlertMutationResponse struct {
+	Status string     `json:"status"`
+	Alert  EnzanAlert `json:"alert"`
 }
 
 // EnzanAlertEndpoint represents one webhook delivery endpoint for Enzan alerts.
@@ -264,6 +279,13 @@ type EnzanAlertEndpoint struct {
 type EnzanAlertEndpointCreateRequest struct {
 	TargetURL     string `json:"targetUrl"`
 	SigningSecret string `json:"signingSecret,omitempty"`
+}
+
+// EnzanAlertEndpointUpdateRequest is the request for updating a webhook endpoint.
+type EnzanAlertEndpointUpdateRequest struct {
+	TargetURL     *string `json:"targetUrl,omitempty"`
+	SigningSecret *string `json:"signingSecret,omitempty"`
+	Enabled       *bool   `json:"enabled,omitempty"`
 }
 
 // EnzanAlertEndpointMutationResponse is the create response for one endpoint.
