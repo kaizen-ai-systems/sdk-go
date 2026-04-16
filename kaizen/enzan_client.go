@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -202,6 +203,24 @@ func validateCreateAlertRequest(alert *EnzanCreateAlertRequest) error {
 		}
 		if strings.TrimSpace(alert.Window) == "" {
 			return fmt.Errorf("window is required for alert type %s", alert.Type)
+		}
+	case CreatableAlertCostAnomaly:
+		if alert.Threshold == nil {
+			return fmt.Errorf("threshold is required for alert type %s", alert.Type)
+		}
+		if *alert.Threshold <= 0 {
+			return fmt.Errorf("threshold must be greater than 0 for alert type %s", alert.Type)
+		}
+		if *alert.Threshold > 10000 {
+			return fmt.Errorf("threshold must be less than or equal to 10000 for alert type %s", alert.Type)
+		}
+		if math.Abs(math.Round(*alert.Threshold*100)-(*alert.Threshold*100)) > 1e-9 {
+			return fmt.Errorf("threshold must use at most two decimal places for alert type %s", alert.Type)
+		}
+		if window := strings.TrimSpace(alert.Window); window == "" {
+			return fmt.Errorf("window is required for alert type %s", alert.Type)
+		} else if window == "1h" {
+			return fmt.Errorf("window must be 24h, 7d, or 30d for alert type %s", alert.Type)
 		}
 	case CreatableAlertBudgetExceeded:
 		if alert.Threshold == nil {

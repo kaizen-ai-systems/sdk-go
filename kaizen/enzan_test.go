@@ -225,6 +225,51 @@ func TestValidateCreateAlertRequestAllowsOptimizationAvailableWithoutWindow(t *t
 	}
 }
 
+func TestValidateCreateAlertRequestSupportsCostAnomaly(t *testing.T) {
+	threshold := 1.1
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name:      "Spend anomaly",
+		Type:      CreatableAlertCostAnomaly,
+		Threshold: &threshold,
+		Window:    "7d",
+	})
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestValidateCreateAlertRequestRejectsOneHourCostAnomalyWindow(t *testing.T) {
+	threshold := 50.0
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name:      "Spend anomaly",
+		Type:      CreatableAlertCostAnomaly,
+		Threshold: &threshold,
+		Window:    "1h",
+	})
+	if err == nil {
+		t.Fatal("expected validation error for invalid cost_anomaly window")
+	}
+	if !strings.Contains(err.Error(), "24h, 7d, or 30d") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateCreateAlertRequestRejectsZeroCostAnomalyThreshold(t *testing.T) {
+	threshold := 0.0
+	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
+		Name:      "Spend anomaly",
+		Type:      CreatableAlertCostAnomaly,
+		Threshold: &threshold,
+		Window:    "7d",
+	})
+	if err == nil {
+		t.Fatal("expected validation error for zero cost_anomaly threshold")
+	}
+	if !strings.Contains(err.Error(), "greater than 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateCreateAlertRequestRejectsNon24HourDailySummaryWindow(t *testing.T) {
 	err := validateCreateAlertRequest(&EnzanCreateAlertRequest{
 		Name:   "Daily summary",

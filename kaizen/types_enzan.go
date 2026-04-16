@@ -40,6 +40,7 @@ type CreatableAlertType string
 
 const (
 	CreatableAlertCostThreshold         CreatableAlertType = "cost_threshold"
+	CreatableAlertCostAnomaly           CreatableAlertType = "cost_anomaly"
 	CreatableAlertBudgetExceeded        CreatableAlertType = "budget_exceeded"
 	CreatableAlertOptimizationAvailable CreatableAlertType = "optimization_available"
 	CreatableAlertPricingChange         CreatableAlertType = "pricing_change"
@@ -226,6 +227,9 @@ type EnzanAlert struct {
 	Window    string            `json:"window"`
 	Labels    map[string]string `json:"labels,omitempty"`
 	Enabled   bool              `json:"enabled"`
+	EvaluationState string      `json:"evaluationState,omitempty"`
+	NextEligibleAt  string      `json:"nextEligibleAt,omitempty"`
+	StatusReason    string      `json:"statusReason,omitempty"`
 }
 
 // EnzanCreateAlertRequest is the request for creating an alert.
@@ -234,7 +238,7 @@ type EnzanCreateAlertRequest struct {
 	Name      string             `json:"name"`
 	Type      CreatableAlertType `json:"type"`
 	Threshold *float64           `json:"threshold,omitempty"`
-	// Window is required when Type is cost_threshold, defaults to 30d for
+	// Window is required when Type is cost_threshold or cost_anomaly, defaults to 30d for
 	// optimization_available, must be omitted or set to 24h for daily_summary,
 	// and is ignored for pricing_change.
 	Window  string            `json:"window,omitempty"`
