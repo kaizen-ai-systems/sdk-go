@@ -43,6 +43,66 @@ func (c *EnzanClient) CostsByModel(ctx context.Context, req *EnzanModelCostReque
 	return &resp, nil
 }
 
+// Routing gets the current smart-routing config.
+func (c *EnzanClient) Routing(ctx context.Context) (*EnzanRoutingConfig, error) {
+	data, err := c.http.get(ctx, "/v1/enzan/routing")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanRoutingConfigResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan routing response: %w", err)
+	}
+	return &resp.Routing, nil
+}
+
+// SetRouting upserts the current smart-routing config.
+func (c *EnzanClient) SetRouting(ctx context.Context, req *EnzanRoutingConfigUpsertRequest) (*EnzanRoutingConfigMutationResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("routing request is required")
+	}
+	if req.Enabled == nil {
+		return nil, fmt.Errorf("enabled is required")
+	}
+	data, err := c.http.post(ctx, "/v1/enzan/routing", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanRoutingConfigMutationResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan set routing response: %w", err)
+	}
+	return &resp, nil
+}
+
+// RoutingSavings gets smart-routing savings for the requested window.
+func (c *EnzanClient) RoutingSavings(ctx context.Context, window string) (*EnzanRoutingSavingsResponse, error) {
+	if trimmed := strings.TrimSpace(window); trimmed != "" {
+		switch trimmed {
+		case "1h", "24h", "7d", "30d":
+			window = trimmed
+		default:
+			return nil, fmt.Errorf("window must be one of: 1h, 24h, 7d, 30d")
+		}
+	}
+	path := "/v1/enzan/routing/savings"
+	if strings.TrimSpace(window) != "" {
+		path += "?window=" + url.QueryEscape(window)
+	}
+	data, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanRoutingSavingsResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan routing savings response: %w", err)
+	}
+	return &resp, nil
+}
+
 // ListModelPricing lists configured LLM pricing entries.
 func (c *EnzanClient) ListModelPricing(ctx context.Context) ([]EnzanLLMPricing, error) {
 	data, err := c.http.get(ctx, "/v1/enzan/pricing/models")

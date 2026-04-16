@@ -163,6 +163,62 @@ type EnzanModelCostResponse struct {
 	Total     EnzanModelCostTotal `json:"total"`
 }
 
+// EnzanRoutingConfigResponse wraps one user's smart-routing config.
+type EnzanRoutingConfigResponse struct {
+	Routing EnzanRoutingConfig `json:"routing"`
+}
+
+// EnzanRoutingConfig represents one user's smart-routing config.
+type EnzanRoutingConfig struct {
+	Enabled       bool   `json:"enabled"`
+	Provider      string `json:"provider"`
+	DefaultModel  string `json:"default_model"`
+	SimpleModel   string `json:"simple_model,omitempty"`
+	ModerateModel string `json:"moderate_model,omitempty"`
+	ComplexModel  string `json:"complex_model,omitempty"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+}
+
+// EnzanRoutingConfigUpsertRequest upserts a smart-routing config.
+type EnzanRoutingConfigUpsertRequest struct {
+	Enabled       *bool   `json:"enabled,omitempty"`
+	SimpleModel   *string `json:"simple_model,omitempty"`
+	ModerateModel *string `json:"moderate_model,omitempty"`
+	ComplexModel  *string `json:"complex_model,omitempty"`
+}
+
+// EnzanRoutingConfigMutationResponse is the write response for smart routing.
+type EnzanRoutingConfigMutationResponse struct {
+	Status  string             `json:"status"`
+	Routing EnzanRoutingConfig `json:"routing"`
+}
+
+// EnzanRoutingSavingsBreakdown is one smart-routing savings bucket.
+type EnzanRoutingSavingsBreakdown struct {
+	PromptCategory        string  `json:"prompt_category"`
+	OriginalModel         string  `json:"original_model"`
+	RoutedModel           string  `json:"routed_model"`
+	Queries               int64   `json:"queries"`
+	ActualCostUSD         float64 `json:"actual_cost_usd"`
+	CounterfactualCostUSD float64 `json:"counterfactual_cost_usd"`
+	EstimatedSavingsUSD   float64 `json:"estimated_savings_usd"`
+}
+
+// EnzanRoutingSavingsResponse summarizes realized smart-routing savings.
+type EnzanRoutingSavingsResponse struct {
+	Window                string                         `json:"window"`
+	StartTime             string                         `json:"start_time"`
+	EndTime               string                         `json:"end_time"`
+	Provider              string                         `json:"provider"`
+	DefaultModel          string                         `json:"default_model"`
+	TotalQueries          int64                          `json:"total_queries"`
+	RoutedQueries         int64                          `json:"routed_queries"`
+	ActualCostUSD         float64                        `json:"actual_cost_usd"`
+	CounterfactualCostUSD float64                        `json:"counterfactual_cost_usd"`
+	EstimatedSavingsUSD   float64                        `json:"estimated_savings_usd"`
+	Breakdown             []EnzanRoutingSavingsBreakdown `json:"breakdown"`
+}
+
 // EnzanLLMPricing represents one LLM pricing catalog row.
 type EnzanLLMPricing struct {
 	Provider                 string  `json:"provider"`
@@ -220,16 +276,16 @@ type EnzanResource struct {
 
 // EnzanAlert represents an alert configuration.
 type EnzanAlert struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Type      AlertType         `json:"type"`
-	Threshold float64           `json:"threshold"`
-	Window    string            `json:"window"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Enabled   bool              `json:"enabled"`
-	EvaluationState string      `json:"evaluationState,omitempty"`
-	NextEligibleAt  string      `json:"nextEligibleAt,omitempty"`
-	StatusReason    string      `json:"statusReason,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Type            AlertType         `json:"type"`
+	Threshold       float64           `json:"threshold"`
+	Window          string            `json:"window"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Enabled         bool              `json:"enabled"`
+	EvaluationState string            `json:"evaluationState,omitempty"`
+	NextEligibleAt  string            `json:"nextEligibleAt,omitempty"`
+	StatusReason    string            `json:"statusReason,omitempty"`
 }
 
 // EnzanCreateAlertRequest is the request for creating an alert.
