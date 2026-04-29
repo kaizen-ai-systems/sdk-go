@@ -163,6 +163,147 @@ func (c *EnzanClient) UpsertGPUPricing(ctx context.Context, req *EnzanGPUPricing
 	return &resp, nil
 }
 
+// TriggerPricingRefresh triggers an on-demand live-pricing refresh sweep
+// (admin enzan_pricing_admin required). Fire-and-forget; poll
+// ListPricingRefreshLog for completion. Returns the typed response with
+// status="queued" on HTTP 202 success. The HTTP 429 (concurrency cap)
+// path is surfaced as *RateLimitError; the dropped body
+// ({status:"dropped",triggeredBy:...}) is preserved on err.Data so
+// callers can branch on the typed shape without a separate decode.
+func (c *EnzanClient) TriggerPricingRefresh(ctx context.Context) (*EnzanPricingRefreshTriggerResponse, error) {
+	data, err := c.http.post(ctx, "/v1/enzan/pricing/refresh", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanPricingRefreshTriggerResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan pricing refresh trigger response: %w", err)
+	}
+	return &resp, nil
+}
+
+// ListPricingRefreshLog lists recent live-pricing refresh log entries
+// (admin enzan_pricing_admin required). Server default is 50; server
+// clamps limit to 1..200 and rejects non-positive values with 400. Pass
+// nil to use the server default; pass a non-nil pointer to forward the
+// caller's value verbatim (including 0 and negative — those will hit
+// server-side validation rather than being silently dropped client-side).
+func (c *EnzanClient) ListPricingRefreshLog(ctx context.Context, limit *int) ([]EnzanPricingRefreshLogEntry, error) {
+	path := "/v1/enzan/pricing/refresh/log"
+	if limit != nil {
+		path += "?limit=" + strconv.Itoa(*limit)
+	}
+	data, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Entries []EnzanPricingRefreshLogEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan pricing refresh log response: %w", err)
+	}
+	return resp.Entries, nil
+}
+
+// ListPricingProviders lists registered live-pricing sources (admin view;
+// admin enzan_pricing_admin required).
+func (c *EnzanClient) ListPricingProviders(ctx context.Context) ([]EnzanPricingProvider, error) {
+	data, err := c.http.get(ctx, "/v1/enzan/pricing/providers")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Providers []EnzanPricingProvider `json:"providers"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan pricing providers response: %w", err)
+	}
+	return resp.Providers, nil
+}
+
+// UpsertPricingOffer upserts one manual (admin-authored) live-pricing offer
+// (admin enzan_pricing_admin required). Exactly one of req.GPU or req.LLM
+// must be set. Returns the typed response with status="upserted" on
+// HTTP 201 success. The HTTP 409 stale path (a newer fetched_at row
+// already exists for the same key) is surfaced as *KaizenError with
+// Status=409; the stale body ({status:"stale"}) is preserved on
+// err.Data so callers can branch on the typed shape without a separate
+// decode.
+//
+// Client-side validation rejects empty string identifiers (provider,
+// gpuType/model, displayName) and unset rate fields before hitting the
+// wire — those are the operator mistakes the server cannot meaningfully
+// surface (a forgotten float field would otherwise serialize as 0 and
+// pass the server's `minimum: 0` constraint as a "free" offer). Setting
+// a rate to `Float64Ptr(0)` is explicitly allowed for genuinely free
+// offers; the disambiguation is the whole reason the rate fields are
+// pointers.
+func (c *EnzanClient) UpsertPricingOffer(ctx context.Context, req *EnzanPricingOfferUpsertRequest) (*EnzanPricingOfferUpsertResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("offer request is required")
+	}
+	if (req.GPU == nil) == (req.LLM == nil) {
+		return nil, fmt.Errorf("exactly one of gpu or llm must be set")
+	}
+	// requireFiniteRate rejects nil, NaN, and Inf so wire payloads carry only
+	// finite numeric values. Matches TS's Number.isFinite and Python's
+	// math.isfinite. Explicit zero (free offer) is allowed.
+	requireFiniteRate := func(value *float64, label string) error {
+		if value == nil {
+			return fmt.Errorf("%s is required (use Float64Ptr(0) for explicit free offers)", label)
+		}
+		if math.IsNaN(*value) || math.IsInf(*value, 0) {
+			return fmt.Errorf("%s must be a finite number", label)
+		}
+		return nil
+	}
+	if req.GPU != nil {
+		if strings.TrimSpace(req.GPU.Provider) == "" {
+			return nil, fmt.Errorf("gpu.provider is required")
+		}
+		if strings.TrimSpace(req.GPU.GPUType) == "" {
+			return nil, fmt.Errorf("gpu.gpuType is required")
+		}
+		if strings.TrimSpace(req.GPU.DisplayName) == "" {
+			return nil, fmt.Errorf("gpu.displayName is required")
+		}
+		if err := requireFiniteRate(req.GPU.HourlyRateUSD, "gpu.hourlyRateUSD"); err != nil {
+			return nil, err
+		}
+	}
+	if req.LLM != nil {
+		if strings.TrimSpace(req.LLM.Provider) == "" {
+			return nil, fmt.Errorf("llm.provider is required")
+		}
+		if strings.TrimSpace(req.LLM.Model) == "" {
+			return nil, fmt.Errorf("llm.model is required")
+		}
+		if strings.TrimSpace(req.LLM.DisplayName) == "" {
+			return nil, fmt.Errorf("llm.displayName is required")
+		}
+		if err := requireFiniteRate(req.LLM.InputCostPer1KTokensUSD, "llm.inputCostPer1KTokensUSD"); err != nil {
+			return nil, err
+		}
+		if err := requireFiniteRate(req.LLM.OutputCostPer1KTokensUSD, "llm.outputCostPer1KTokensUSD"); err != nil {
+			return nil, err
+		}
+	}
+	data, err := c.http.post(ctx, "/v1/enzan/pricing/offers", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp EnzanPricingOfferUpsertResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan pricing offer upsert response: %w", err)
+	}
+	return &resp, nil
+}
+
 // Burn gets current burn rate.
 func (c *EnzanClient) Burn(ctx context.Context) (*EnzanBurnResponse, error) {
 	data, err := c.http.get(ctx, "/v1/enzan/burn")

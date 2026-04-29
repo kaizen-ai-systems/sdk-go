@@ -90,6 +90,7 @@ func (c *httpClient) request(ctx context.Context, method, path string, body inte
 				Status:    http.StatusTooManyRequests,
 				Code:      "RATE_LIMIT",
 				RequestID: requestID,
+				Data:      parseAPIErrorData(respBody),
 			},
 			RetryAfter: retryAfter,
 		}

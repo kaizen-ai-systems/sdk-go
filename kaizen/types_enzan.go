@@ -252,6 +252,165 @@ type EnzanGPUPricingMutationResponse struct {
 	Pricing EnzanGPUPricing `json:"pricing"`
 }
 
+// EnzanPricingRefreshTriggerResponse is the response from POST /v1/enzan/pricing/refresh.
+// Status is "queued" (HTTP 202, sweep admitted) or "dropped" (HTTP 429,
+// per-process concurrency cap reached; caller should retry shortly).
+type EnzanPricingRefreshTriggerResponse struct {
+	Status      string `json:"status"`
+	TriggeredBy string `json:"triggeredBy"`
+}
+
+// EnzanPricingRefreshLogEntry is one row from enzan_pricing_refresh_log.
+// Pointer fields are nullable (omitted in JSON when null).
+type EnzanPricingRefreshLogEntry struct {
+	ID           string  `json:"id"`
+	SourceID     *string `json:"sourceId,omitempty"`
+	SourceName   *string `json:"sourceName,omitempty"`
+	Kind         string  `json:"kind"`
+	TriggeredBy  *string `json:"triggeredBy,omitempty"`
+	Status       string  `json:"status"`
+	RowsUpserted int     `json:"rowsUpserted"`
+	RowsSkipped  int     `json:"rowsSkipped"`
+	DurationMs   *int32  `json:"durationMs,omitempty"`
+	Error        *string `json:"error,omitempty"`
+	StartedAt    string  `json:"startedAt"`
+	FinishedAt   *string `json:"finishedAt,omitempty"`
+}
+
+// EnzanPricingProvider is one row from enzan_pricing_sources (admin view).
+type EnzanPricingProvider struct {
+	ID                   string  `json:"id"`
+	Name                 string  `json:"name"`
+	Kind                 string  `json:"kind"`
+	Enabled              bool    `json:"enabled"`
+	RefreshIntervalHours int     `json:"refreshIntervalHours"`
+	HasAdapter           bool    `json:"hasAdapter"`
+	LastSuccessAt        *string `json:"lastSuccessAt,omitempty"`
+	LastFailureAt        *string `json:"lastFailureAt,omitempty"`
+	LastError            *string `json:"lastError,omitempty"`
+}
+
+// BoolPtr returns a pointer to b. Convenience constructor for SDK
+// payload fields that use *bool to disambiguate "explicit false" from
+// "unset" (e.g., EnzanGPUOfferUpsertPayload.TrainingReady).
+func BoolPtr(b bool) *bool { return &b }
+
+// Float64Ptr returns a pointer to f. Convenience constructor for SDK
+// payload fields that use *float64 to disambiguate "explicit zero"
+// (a genuine free offer) from "unset" (a forgotten field that would
+// otherwise pass the server's `minimum: 0` validation as a free offer).
+func Float64Ptr(f float64) *float64 { return &f }
+
+// EnzanGPUOfferUpsertPayload is the GPU branch of POST /v1/enzan/pricing/offers.
+// DeploymentClass enum: on_demand | reserved | spot | committed_monthly.
+// InterconnectClass enum: standard | high_speed | infiniband | nvlink | unknown.
+//
+// TrainingReady and HourlyRateUSD are pointers (not value types) so callers
+// can express "unset" distinctly from "explicit false / explicit zero".
+// With a plain `float64`, Go's zero value and a deliberate free offer are
+// indistinguishable on the wire — a forgetful caller would silently submit
+// a $0/hr offer that the server (which accepts `minimum: 0`) would happily
+// persist. The pointer forces an explicit decision; the client validates
+// non-nil before sending so typos surface as a clear ValueError equivalent
+// rather than as a free offer in the catalog.
+type EnzanGPUOfferUpsertPayload struct {
+	Provider          string   `json:"provider"`
+	GPUType           string   `json:"gpuType"`
+	DisplayName       string   `json:"displayName"`
+	Region            string   `json:"region,omitempty"`
+	DeploymentClass   string   `json:"deploymentClass,omitempty"`
+	CommitmentTerm    string   `json:"commitmentTerm,omitempty"`
+	ClusterSizeMin    int      `json:"clusterSizeMin,omitempty"`
+	ClusterSizeMax    int      `json:"clusterSizeMax,omitempty"`
+	InterconnectClass string   `json:"interconnectClass,omitempty"`
+	TrainingReady     *bool    `json:"trainingReady,omitempty"`
+	HourlyRateUSD     *float64 `json:"hourlyRateUSD,omitempty"`
+	Currency          string   `json:"currency,omitempty"`
+	CurrencyFxNote    string   `json:"currencyFxNote,omitempty"`
+	SourceURL         string   `json:"sourceUrl,omitempty"`
+}
+
+// EnzanLLMOfferUpsertPayload is the LLM branch of POST /v1/enzan/pricing/offers.
+// Cost fields are pointers for the same "unset != explicit zero" reason
+// documented on EnzanGPUOfferUpsertPayload.
+type EnzanLLMOfferUpsertPayload struct {
+	Provider                 string   `json:"provider"`
+	Model                    string   `json:"model"`
+	DisplayName              string   `json:"displayName"`
+	Region                   string   `json:"region,omitempty"`
+	CommitmentTerm           string   `json:"commitmentTerm,omitempty"`
+	InputCostPer1KTokensUSD  *float64 `json:"inputCostPer1KTokensUSD,omitempty"`
+	OutputCostPer1KTokensUSD *float64 `json:"outputCostPer1KTokensUSD,omitempty"`
+	Currency                 string   `json:"currency,omitempty"`
+	CurrencyFxNote           string   `json:"currencyFxNote,omitempty"`
+	SourceURL                string   `json:"sourceUrl,omitempty"`
+}
+
+// EnzanPricingOfferUpsertRequest is the body for POST /v1/enzan/pricing/offers.
+// Exactly one of GPU or LLM must be set.
+type EnzanPricingOfferUpsertRequest struct {
+	GPU *EnzanGPUOfferUpsertPayload `json:"gpu,omitempty"`
+	LLM *EnzanLLMOfferUpsertPayload `json:"llm,omitempty"`
+}
+
+// EnzanGPUOffer is the persisted GPU offer (admin or adapter-sourced).
+type EnzanGPUOffer struct {
+	ID                string  `json:"id"`
+	Provider          string  `json:"provider"`
+	GPUType           string  `json:"gpuType"`
+	DisplayName       string  `json:"displayName"`
+	Region            *string `json:"region,omitempty"`
+	DeploymentClass   string  `json:"deploymentClass"`
+	CommitmentTerm    *string `json:"commitmentTerm,omitempty"`
+	ClusterSizeMin    int     `json:"clusterSizeMin"`
+	ClusterSizeMax    *int32  `json:"clusterSizeMax,omitempty"`
+	InterconnectClass string  `json:"interconnectClass"`
+	TrainingReady     bool    `json:"trainingReady"`
+	HourlyRateUSD     float64 `json:"hourlyRateUSD"`
+	Currency          string  `json:"currency"`
+	CurrencyFxNote    *string `json:"currencyFxNote,omitempty"`
+	SourceType        string  `json:"sourceType"`
+	SourceID          *string `json:"sourceId,omitempty"`
+	SourceURL         *string `json:"sourceUrl,omitempty"`
+	SourceFingerprint *string `json:"sourceFingerprint,omitempty"`
+	TrustStatus       string  `json:"trustStatus"`
+	FetchedAt         string  `json:"fetchedAt"`
+	FirstSeenAt       string  `json:"firstSeenAt"`
+	LastSeenAt        string  `json:"lastSeenAt"`
+	Active            bool    `json:"active"`
+}
+
+// EnzanLLMOffer is the persisted LLM offer (admin or adapter-sourced).
+type EnzanLLMOffer struct {
+	ID                       string  `json:"id"`
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	DisplayName              string  `json:"displayName"`
+	Region                   *string `json:"region,omitempty"`
+	CommitmentTerm           *string `json:"commitmentTerm,omitempty"`
+	InputCostPer1KTokensUSD  float64 `json:"inputCostPer1KTokensUSD"`
+	OutputCostPer1KTokensUSD float64 `json:"outputCostPer1KTokensUSD"`
+	Currency                 string  `json:"currency"`
+	CurrencyFxNote           *string `json:"currencyFxNote,omitempty"`
+	SourceType               string  `json:"sourceType"`
+	SourceID                 *string `json:"sourceId,omitempty"`
+	SourceURL                *string `json:"sourceUrl,omitempty"`
+	SourceFingerprint        *string `json:"sourceFingerprint,omitempty"`
+	TrustStatus              string  `json:"trustStatus"`
+	FetchedAt                string  `json:"fetchedAt"`
+	FirstSeenAt              string  `json:"firstSeenAt"`
+	LastSeenAt               string  `json:"lastSeenAt"`
+	Active                   bool    `json:"active"`
+}
+
+// EnzanPricingOfferUpsertResponse is the response from POST /v1/enzan/pricing/offers.
+// Status is "upserted" (HTTP 201) or "stale" (HTTP 409 — newer fetched_at row exists).
+type EnzanPricingOfferUpsertResponse struct {
+	Status string         `json:"status"`
+	GPU    *EnzanGPUOffer `json:"gpu,omitempty"`
+	LLM    *EnzanLLMOffer `json:"llm,omitempty"`
+}
+
 // APICostSummary represents estimated Akuma API token spend.
 type APICostSummary struct {
 	TotalCostUSD float64 `json:"totalCostUsd"`
