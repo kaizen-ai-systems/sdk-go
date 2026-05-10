@@ -1,9 +1,11 @@
 package kaizen
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // AkumaClient is the client for Akuma API.
@@ -21,6 +23,91 @@ func (c *AkumaClient) Query(ctx context.Context, req *AkumaQueryRequest) (*Akuma
 	var resp AkumaQueryResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("decode akuma query response: %w", err)
+	}
+	return &resp, nil
+}
+
+// QueryInteractive runs a query through the interactive Akuma protocol.
+func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaQueryRequest) (*AkumaInteractiveQueryResponse, error) {
+	data, err := c.http.post(ctx, "/v1/akuma/queries/interactive", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var rawEnvelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawEnvelope); err != nil || rawEnvelope == nil {
+		var topLevel interface{}
+		if topErr := json.Unmarshal(data, &topLevel); topErr != nil {
+			return nil, &KaizenError{
+				Message: fmt.Sprintf("decode interactive akuma query envelope: %v", err),
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		return nil, &KaizenError{
+			Message: "interactive query response must be an object",
+			Code:    "INVALID_RESPONSE",
+			Data:    map[string]interface{}{"response": topLevel},
+		}
+	}
+	var status AkumaInteractiveQueryStatus
+	if statusRaw, ok := rawEnvelope["status"]; ok {
+		if err := json.Unmarshal(statusRaw, &status); err != nil {
+			return nil, &KaizenError{
+				Message: fmt.Sprintf("decode interactive akuma query envelope: %v", err),
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+	}
+	if strings.TrimSpace(string(status)) == "" {
+		return nil, &KaizenError{
+			Message: "interactive query response missing status",
+			Code:    "INVALID_RESPONSE",
+			Data:    parseAPIErrorData(data),
+		}
+	}
+	resultRaw, hasResult := rawEnvelope["result"]
+	trimmedResult := bytes.TrimSpace(resultRaw)
+	resp := AkumaInteractiveQueryResponse{Status: status, RawResponse: rawEnvelope}
+	if len(trimmedResult) > 0 {
+		if trimmedResult[0] != '{' {
+			return nil, &KaizenError{
+				Message: "interactive query response result must be an object",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		var queryResp AkumaQueryResponse
+		if err := json.Unmarshal(trimmedResult, &queryResp); err != nil {
+			return nil, &KaizenError{
+				Message: fmt.Sprintf("decode interactive akuma query result: %v", err),
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		resp.Result = &queryResp
+	}
+	if (resp.Status == AkumaInteractiveQueryStatusCompleted || resp.Status == AkumaInteractiveQueryStatusRejected) && !hasResult {
+		return nil, &KaizenError{
+			Message: "interactive query response missing result",
+			Code:    "INVALID_RESPONSE",
+			Data:    parseAPIErrorData(data),
+		}
+	}
+	if resp.Status == AkumaInteractiveQueryStatusRejected && (resp.Result == nil || strings.TrimSpace(resp.Result.Error) == "") {
+		return nil, &KaizenError{
+			Message: "interactive query rejected response missing error",
+			Code:    "INVALID_RESPONSE",
+			Data:    parseAPIErrorData(data),
+		}
+	}
+	if resp.Status == AkumaInteractiveQueryStatusCompleted && resp.Result != nil && strings.TrimSpace(resp.Result.Error) != "" {
+		return nil, &KaizenError{
+			Message: "interactive query completed response must not include error",
+			Code:    "INVALID_RESPONSE",
+			Data:    parseAPIErrorData(data),
+		}
 	}
 	return &resp, nil
 }

@@ -1,5 +1,7 @@
 package kaizen
 
+import "encoding/json"
+
 // SQLDialect represents a database dialect.
 type SQLDialect string
 
@@ -57,6 +59,21 @@ type AkumaQueryResponse struct {
 	Tables      []string                 `json:"tables,omitempty"`
 	Warnings    []string                 `json:"warnings,omitempty"`
 	Error       string                   `json:"error,omitempty"`
+}
+
+// AkumaInteractiveQueryStatus is the state returned by the interactive query protocol.
+type AkumaInteractiveQueryStatus string
+
+const (
+	AkumaInteractiveQueryStatusCompleted AkumaInteractiveQueryStatus = "completed"
+	AkumaInteractiveQueryStatusRejected  AkumaInteractiveQueryStatus = "rejected"
+)
+
+// AkumaInteractiveQueryResponse is the response from the interactive Akuma query protocol.
+type AkumaInteractiveQueryResponse struct {
+	Status      AkumaInteractiveQueryStatus `json:"status"`
+	Result      *AkumaQueryResponse         `json:"result,omitempty"`
+	RawResponse map[string]json.RawMessage  `json:"-"`
 }
 
 // AkumaExplainResponse is the response from Akuma explain.
