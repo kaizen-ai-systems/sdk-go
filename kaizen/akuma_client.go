@@ -27,13 +27,51 @@ func (c *AkumaClient) Query(ctx context.Context, req *AkumaQueryRequest) (*Akuma
 	return &resp, nil
 }
 
-// QueryInteractive runs a query through the interactive Akuma protocol.
+// QueryInteractive runs a fresh query through the interactive Akuma protocol.
+// To consume a needs_clarification response, use ConsumeClarification.
 func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaQueryRequest) (*AkumaInteractiveQueryResponse, error) {
 	data, err := c.http.post(ctx, "/v1/akuma/queries/interactive", req)
 	if err != nil {
 		return nil, err
 	}
+	return parseAkumaInteractiveResponse(data)
+}
 
+// ConsumeClarification consumes a previously-issued clarification by selecting
+// one of the offered options. The Idempotency field is required and is sent as
+// the Idempotency-Key header. The first successful consume wins; same-key
+// retries replay the persisted result; different-key retries are rejected with
+// a 409 KaizenError.
+func (c *AkumaClient) ConsumeClarification(ctx context.Context, req *AkumaInteractiveConsumeRequest) (*AkumaInteractiveQueryResponse, error) {
+	if req == nil {
+		return nil, &KaizenError{Message: "consume request is required", Code: "INVALID_REQUEST"}
+	}
+	if strings.TrimSpace(req.ClarificationToken) == "" {
+		return nil, &KaizenError{Message: "clarificationToken is required", Code: "INVALID_REQUEST"}
+	}
+	if strings.TrimSpace(req.OptionID) == "" {
+		return nil, &KaizenError{Message: "optionId is required", Code: "INVALID_REQUEST"}
+	}
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		return nil, &KaizenError{Message: "IdempotencyKey is required for consume", Code: "INVALID_REQUEST"}
+	}
+	body := map[string]string{
+		"clarificationToken": req.ClarificationToken,
+		"optionId":           req.OptionID,
+	}
+	headers := map[string]string{"Idempotency-Key": req.IdempotencyKey}
+	data, err := c.http.requestWithHeaders(ctx, "POST", "/v1/akuma/queries/interactive", body, headers)
+	if err != nil {
+		return nil, err
+	}
+	return parseAkumaInteractiveResponse(data)
+}
+
+// parseAkumaInteractiveResponse decodes and validates an interactive envelope.
+// Strict shape rules: status required, result must be an object when present,
+// completed/rejected require result, needs_clarification requires clarification
+// with at least 2 options.
+func parseAkumaInteractiveResponse(data []byte) (*AkumaInteractiveQueryResponse, error) {
 	var rawEnvelope map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawEnvelope); err != nil || rawEnvelope == nil {
 		var topLevel interface{}
@@ -88,6 +126,32 @@ func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaQueryReque
 		}
 		resp.Result = &queryResp
 	}
+	clarificationRaw, hasClarification := rawEnvelope["clarification"]
+	trimmedClarification := bytes.TrimSpace(clarificationRaw)
+	// Only strictly parse the clarification payload for the needs_clarification
+	// status. A forward-compat future status may ship a permissively-shaped
+	// clarification field whose types differ from AkumaClarification; strictly
+	// unmarshalling it would break forward compatibility. The raw envelope is
+	// always on RawResponse for callers that want to inspect it. This matches
+	// the Python SDK's behavior (human review #3 L1).
+	if status == AkumaInteractiveQueryStatusNeedsClarification && len(trimmedClarification) > 0 {
+		if trimmedClarification[0] != '{' {
+			return nil, &KaizenError{
+				Message: "interactive query response clarification must be an object",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		var clarification AkumaClarification
+		if err := json.Unmarshal(trimmedClarification, &clarification); err != nil {
+			return nil, &KaizenError{
+				Message: fmt.Sprintf("decode interactive akuma clarification: %v", err),
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		resp.Clarification = &clarification
+	}
 	if (resp.Status == AkumaInteractiveQueryStatusCompleted || resp.Status == AkumaInteractiveQueryStatusRejected) && !hasResult {
 		return nil, &KaizenError{
 			Message: "interactive query response missing result",
@@ -107,6 +171,52 @@ func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaQueryReque
 			Message: "interactive query completed response must not include error",
 			Code:    "INVALID_RESPONSE",
 			Data:    parseAPIErrorData(data),
+		}
+	}
+	if resp.Status == AkumaInteractiveQueryStatusNeedsClarification {
+		if !hasClarification || resp.Clarification == nil {
+			return nil, &KaizenError{
+				Message: "interactive query needs_clarification response missing clarification",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		if strings.TrimSpace(resp.Clarification.ClarificationToken) == "" {
+			return nil, &KaizenError{
+				Message: "interactive query needs_clarification response missing clarificationToken",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		if strings.TrimSpace(resp.Clarification.Question) == "" {
+			return nil, &KaizenError{
+				Message: "interactive query needs_clarification response missing question",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		if len(resp.Clarification.Options) < 2 || len(resp.Clarification.Options) > 4 {
+			return nil, &KaizenError{
+				Message: "interactive query needs_clarification response requires 2-4 options",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		for _, opt := range resp.Clarification.Options {
+			if strings.TrimSpace(opt.ID) == "" || strings.TrimSpace(opt.Label) == "" {
+				return nil, &KaizenError{
+					Message: "interactive query needs_clarification option missing id or label",
+					Code:    "INVALID_RESPONSE",
+					Data:    parseAPIErrorData(data),
+				}
+			}
+		}
+		if strings.TrimSpace(resp.Clarification.ExpiresAt) == "" {
+			return nil, &KaizenError{
+				Message: "interactive query needs_clarification response missing expiresAt",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
 		}
 	}
 	return &resp, nil

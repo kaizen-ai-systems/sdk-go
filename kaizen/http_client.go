@@ -31,6 +31,13 @@ func newHTTPClient(baseURL, apiKey string, timeout time.Duration) *httpClient {
 }
 
 func (c *httpClient) request(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
+	return c.requestWithHeaders(ctx, method, path, body, nil)
+}
+
+// requestWithHeaders is identical to request but lets callers set extra request
+// headers (e.g., Idempotency-Key on the Akuma clarification consume path).
+// Empty values are skipped so callers can pass unconditional maps.
+func (c *httpClient) requestWithHeaders(ctx context.Context, method, path string, body interface{}, headers map[string]string) ([]byte, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -52,6 +59,12 @@ func (c *httpClient) request(ctx context.Context, method, path string, body inte
 	req.Header.Set("User-Agent", fmt.Sprintf("kaizen-go/%s", Version))
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	for k, v := range headers {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
 	}
 
 	resp, err := c.httpClient.Do(req)

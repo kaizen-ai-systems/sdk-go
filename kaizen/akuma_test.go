@@ -304,12 +304,40 @@ func TestAkumaClientQueryInteractiveRequiresResultForCurrentStatuses(t *testing.
 	}
 }
 
+// Regression: human review #3 L1 — a forward-compat future status that ships
+// a permissively-shaped `clarification` (e.g. options as a string, not an
+// array) must NOT break the Go SDK. The clarification is only strictly parsed
+// for needs_clarification; for other statuses the raw envelope passes through
+// on RawResponse. Mirrors the Python SDK's behavior.
+func TestAkumaClientQueryInteractiveToleratesOffShapeClarificationOnFutureStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"deferred","clarification":{"options":"not-an-array","note":42}}`))
+	}))
+	defer server.Close()
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+	if err != nil {
+		t.Fatalf("future status with off-shape clarification must not error: %v", err)
+	}
+	if resp.Status != "deferred" {
+		t.Fatalf("status: got %q", resp.Status)
+	}
+	if resp.Clarification != nil {
+		t.Fatalf("clarification should not be strictly parsed for non-needs_clarification status, got %#v", resp.Clarification)
+	}
+	if _, ok := resp.RawResponse["clarification"]; !ok {
+		t.Fatal("raw clarification should be preserved on RawResponse for inspection")
+	}
+}
+
 func TestAkumaClientQueryInteractiveAllowsFutureStatusWithoutResult(t *testing.T) {
+	// PR 1b: needs_clarification is now a known status with required clarification
+	// shape; use a genuinely future status to cover the forward-compat passthrough.
 	tests := []struct {
 		name string
 		body string
 	}{
-		{name: "absent", body: `{"status":"needs_clarification","prompt":"Which table should I use?"}`},
+		{name: "absent", body: `{"status":"deferred","prompt":"Which table should I use?"}`},
 	}
 
 	for _, tt := range tests {
@@ -327,7 +355,7 @@ func TestAkumaClientQueryInteractiveAllowsFutureStatusWithoutResult(t *testing.T
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if resp.Status != "needs_clarification" {
+			if resp.Status != "deferred" {
 				t.Fatalf("unexpected status: %q", resp.Status)
 			}
 			if resp.Result != nil {
@@ -352,13 +380,15 @@ func TestAkumaClientQueryInteractiveAllowsFutureStatusWithoutResult(t *testing.T
 }
 
 func TestAkumaClientQueryInteractiveRejectsNonObjectResult(t *testing.T) {
+	// `needs_clarification` no longer takes `result`; switch malformed-result
+	// coverage to statuses that do require result.
 	tests := []struct {
 		name string
 		body string
 	}{
 		{name: "completed null", body: `{"status":"completed","result":null}`},
-		{name: "null", body: `{"status":"needs_clarification","result":null}`},
-		{name: "array", body: `{"status":"needs_clarification","result":[]}`},
+		{name: "rejected null", body: `{"status":"rejected","result":null}`},
+		{name: "rejected array", body: `{"status":"rejected","result":[]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -423,6 +453,168 @@ func TestAkumaClientQueryInteractiveRejectsTopLevelNonObjectResponse(t *testing.
 			}
 			if got := apiErr.Data["response"]; !reflect.DeepEqual(got, tt.wantResponse) {
 				t.Fatalf("unexpected error response data: got %#v want %#v", got, tt.wantResponse)
+			}
+		})
+	}
+}
+
+func TestAkumaClientQueryInteractiveDecodesNeedsClarification(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"status":"needs_clarification",
+			"clarification":{
+				"clarificationToken":"tok-abc",
+				"question":"Which window?",
+				"options":[
+					{"id":"7d","label":"Last 7 days"},
+					{"id":"30d","label":"Last 30 days","description":"Default"}
+				],
+				"expiresAt":"2030-01-01T00:00:00Z"
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{
+		Dialect: DialectPostgres,
+		Prompt:  "show me usage",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status != AkumaInteractiveQueryStatusNeedsClarification {
+		t.Fatalf("status: got %q", resp.Status)
+	}
+	if resp.Clarification == nil {
+		t.Fatal("expected clarification")
+	}
+	if resp.Clarification.ClarificationToken != "tok-abc" {
+		t.Fatalf("token: %q", resp.Clarification.ClarificationToken)
+	}
+	if len(resp.Clarification.Options) != 2 {
+		t.Fatalf("options: %d", len(resp.Clarification.Options))
+	}
+	if resp.Result != nil {
+		t.Fatalf("expected no result on needs_clarification, got %#v", resp.Result)
+	}
+}
+
+func TestAkumaClientQueryInteractiveRejectsNeedsClarificationWithoutClarification(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"needs_clarification"}`))
+	}))
+	defer server.Close()
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	_, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	apiErr, ok := err.(*KaizenError)
+	if !ok || apiErr.Code != "INVALID_RESPONSE" {
+		t.Fatalf("expected INVALID_RESPONSE KaizenError, got %#v", err)
+	}
+}
+
+func TestAkumaClientQueryInteractiveRejectsClarificationOptionMissingIDOrLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "empty id",
+			body: `{
+				"status":"needs_clarification",
+				"clarification":{
+					"clarificationToken":"tok","question":"q",
+					"options":[{"id":"","label":"A"},{"id":"b","label":"B"}],
+					"expiresAt":"2030-01-01T00:00:00Z"
+				}
+			}`,
+		},
+		{
+			name: "empty label",
+			body: `{
+				"status":"needs_clarification",
+				"clarification":{
+					"clarificationToken":"tok","question":"q",
+					"options":[{"id":"a","label":"A"},{"id":"b","label":""}],
+					"expiresAt":"2030-01-01T00:00:00Z"
+				}
+			}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+			_, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			apiErr, ok := err.(*KaizenError)
+			if !ok || apiErr.Code != "INVALID_RESPONSE" {
+				t.Fatalf("expected INVALID_RESPONSE KaizenError, got %#v", err)
+			}
+		})
+	}
+}
+
+func TestAkumaClientConsumeClarificationForwardsHeader(t *testing.T) {
+	var (
+		gotKey  string
+		gotPath string
+		gotBody map[string]string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("Idempotency-Key")
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"SELECT 1"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.ConsumeClarification(context.Background(), &AkumaInteractiveConsumeRequest{
+		ClarificationToken: "tok-abc",
+		OptionID:           "7d",
+		IdempotencyKey:     "key-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotPath != "/v1/akuma/queries/interactive" {
+		t.Fatalf("path: %q", gotPath)
+	}
+	if gotKey != "key-1" {
+		t.Fatalf("Idempotency-Key: %q", gotKey)
+	}
+	if gotBody["clarificationToken"] != "tok-abc" || gotBody["optionId"] != "7d" {
+		t.Fatalf("body: %#v", gotBody)
+	}
+	if resp.Status != AkumaInteractiveQueryStatusCompleted || resp.Result == nil || resp.Result.SQL != "SELECT 1" {
+		t.Fatalf("response: %#v", resp)
+	}
+}
+
+func TestAkumaClientConsumeClarificationRequiresFields(t *testing.T) {
+	client := NewClient(&ClientConfig{BaseURL: "http://localhost", APIKey: "test"})
+	cases := []struct {
+		name string
+		req  *AkumaInteractiveConsumeRequest
+	}{
+		{name: "missing token", req: &AkumaInteractiveConsumeRequest{OptionID: "7d", IdempotencyKey: "k"}},
+		{name: "missing option", req: &AkumaInteractiveConsumeRequest{ClarificationToken: "t", IdempotencyKey: "k"}},
+		{name: "missing idempotency", req: &AkumaInteractiveConsumeRequest{ClarificationToken: "t", OptionID: "7d"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.Akuma.ConsumeClarification(context.Background(), tc.req)
+			if err == nil {
+				t.Fatal("expected error")
 			}
 		})
 	}

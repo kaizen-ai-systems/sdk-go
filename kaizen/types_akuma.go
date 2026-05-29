@@ -62,18 +62,53 @@ type AkumaQueryResponse struct {
 }
 
 // AkumaInteractiveQueryStatus is the state returned by the interactive query protocol.
+// The status field is x-extensible-enum on the server; clients should treat
+// unknown values as forward-compat passthrough using RawResponse.
 type AkumaInteractiveQueryStatus string
 
 const (
-	AkumaInteractiveQueryStatusCompleted AkumaInteractiveQueryStatus = "completed"
-	AkumaInteractiveQueryStatusRejected  AkumaInteractiveQueryStatus = "rejected"
+	AkumaInteractiveQueryStatusCompleted          AkumaInteractiveQueryStatus = "completed"
+	AkumaInteractiveQueryStatusRejected           AkumaInteractiveQueryStatus = "rejected"
+	AkumaInteractiveQueryStatusNeedsClarification AkumaInteractiveQueryStatus = "needs_clarification"
 )
 
-// AkumaInteractiveQueryResponse is the response from the interactive Akuma query protocol.
+// AkumaClarificationOption is one disambiguation choice presented in a
+// needs_clarification response. ID is the stable identifier the caller passes
+// back as OptionID on the consume request.
+type AkumaClarificationOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// AkumaClarification is the structured payload returned alongside a
+// needs_clarification status. ClarificationToken is opaque; clients must echo
+// it verbatim on the consume call.
+type AkumaClarification struct {
+	ClarificationToken string                     `json:"clarificationToken"`
+	Question           string                     `json:"question"`
+	Options            []AkumaClarificationOption `json:"options"`
+	ExpiresAt          string                     `json:"expiresAt"`
+}
+
+// AkumaInteractiveQueryResponse is the response from the interactive Akuma
+// query protocol. Either Result (completed/rejected) or Clarification
+// (needs_clarification) is set; future statuses pass through RawResponse only.
 type AkumaInteractiveQueryResponse struct {
-	Status      AkumaInteractiveQueryStatus `json:"status"`
-	Result      *AkumaQueryResponse         `json:"result,omitempty"`
-	RawResponse map[string]json.RawMessage  `json:"-"`
+	Status        AkumaInteractiveQueryStatus `json:"status"`
+	Result        *AkumaQueryResponse         `json:"result,omitempty"`
+	Clarification *AkumaClarification         `json:"clarification,omitempty"`
+	RawResponse   map[string]json.RawMessage  `json:"-"`
+}
+
+// AkumaInteractiveConsumeRequest carries the consume-side fields. IdempotencyKey
+// MUST be a non-empty string and is sent as the Idempotency-Key header. The
+// field name mirrors the camelCase / snake_case naming in the TypeScript and
+// Python SDKs (idempotencyKey / idempotency_key) for cross-SDK symmetry.
+type AkumaInteractiveConsumeRequest struct {
+	ClarificationToken string `json:"clarificationToken"`
+	OptionID           string `json:"optionId"`
+	IdempotencyKey     string `json:"-"`
 }
 
 // AkumaExplainResponse is the response from Akuma explain.
