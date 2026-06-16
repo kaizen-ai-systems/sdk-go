@@ -3,6 +3,7 @@ package kaizen
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -128,6 +129,116 @@ func TestAkumaClientQueryInteractiveMapsRejectedResponse(t *testing.T) {
 	}
 	if resp.Result.SQL != "select *" {
 		t.Fatalf("unexpected sql: %q", resp.Result.SQL)
+	}
+}
+
+// PR 1c: provenance on a completed envelope is strictly parsed into the typed
+// field; off-shape provenance on a future status passes through RawResponse
+// only (same forward-compat scoping as clarification).
+func TestAkumaClientQueryInteractiveParsesProvenance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"SELECT u.name FROM users u"},"provenance":{"provenanceFidelity":"full","dialect":"postgres","tables":["users"],"joins":[],"filters":[{"clause":"where","expression":"u.active"}],"projections":[{"expression":"u.name"}],"aggregations":{"groupBy":[],"functions":[]},"warnings":[]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{
+		Dialect: DialectPostgres,
+		Prompt:  "active users",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Provenance == nil {
+		t.Fatal("expected provenance on completed envelope")
+	}
+	if resp.Provenance.ProvenanceFidelity != AkumaProvenanceFidelityFull {
+		t.Fatalf("unexpected fidelity: %q", resp.Provenance.ProvenanceFidelity)
+	}
+	if len(resp.Provenance.Tables) != 1 || resp.Provenance.Tables[0] != "users" {
+		t.Fatalf("unexpected tables: %#v", resp.Provenance.Tables)
+	}
+	if len(resp.Provenance.Filters) != 1 || resp.Provenance.Filters[0].Clause != "where" {
+		t.Fatalf("unexpected filters: %#v", resp.Provenance.Filters)
+	}
+}
+
+// Claude round-1 M1: the contract says arrays are always present — a payload
+// that omits them must decode to empty slices, not nil.
+func TestAkumaClientQueryInteractiveNormalizesProvenanceArrays(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"select 1"},"provenance":{"provenanceFidelity":"limited","dialect":"snowflake"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectSnowflake, Prompt: "x"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p := resp.Provenance
+	if p == nil {
+		t.Fatal("expected provenance")
+	}
+	if p.Tables == nil || p.Joins == nil || p.Filters == nil || p.Projections == nil || p.Warnings == nil {
+		t.Fatalf("arrays must be non-nil after normalization: %+v", p)
+	}
+	if p.Aggregations.GroupBy == nil || p.Aggregations.Functions == nil {
+		t.Fatalf("aggregations arrays must be non-nil after normalization: %+v", p.Aggregations)
+	}
+}
+
+// Claude round-3 F2 (parity pin): off-type provenance contents fail closed in
+// Go too — the typed unmarshal rejects them.
+func TestAkumaClientQueryInteractiveRejectsOffTypeProvenanceContents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"select 1"},"provenance":{"provenanceFidelity":"full","joins":[42]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	_, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+	var kzErr *KaizenError
+	if err == nil || !errors.As(err, &kzErr) || kzErr.Code != "INVALID_RESPONSE" {
+		t.Fatalf("off-type provenance contents must fail closed, got %v", err)
+	}
+}
+
+// Codex round-1 F3: an empty provenance object on a completed envelope must be
+// rejected — provenanceFidelity is the load-bearing field.
+func TestAkumaClientQueryInteractiveRejectsProvenanceWithoutFidelity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"select 1"},"provenance":{}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	_, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+	if err == nil {
+		t.Fatal("completed provenance without provenanceFidelity must be rejected")
+	}
+	var kzErr *KaizenError
+	if !errors.As(err, &kzErr) || kzErr.Code != "INVALID_RESPONSE" {
+		t.Fatalf("expected INVALID_RESPONSE KaizenError, got %v", err)
+	}
+}
+
+func TestAkumaClientQueryInteractiveToleratesOffShapeProvenanceOnFutureStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"deferred","provenance":"not-an-object"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	resp, err := client.Akuma.QueryInteractive(context.Background(), &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x"})
+	if err != nil {
+		t.Fatalf("future status with off-shape provenance must not error: %v", err)
+	}
+	if resp.Provenance != nil {
+		t.Fatalf("provenance must not be strictly parsed for future statuses: %#v", resp.Provenance)
+	}
+	if _, ok := resp.RawResponse["provenance"]; !ok {
+		t.Fatal("raw provenance should be preserved on RawResponse")
 	}
 }
 

@@ -152,6 +152,43 @@ func parseAkumaInteractiveResponse(data []byte) (*AkumaInteractiveQueryResponse,
 		}
 		resp.Clarification = &clarification
 	}
+	// Provenance is only defined for completed results (PR 1c); like
+	// clarification above, it is strictly parsed only for the status that
+	// defines it so a future status can reshape the field without breaking
+	// older SDKs. The raw envelope always carries it for inspection.
+	provenanceRaw := bytes.TrimSpace(rawEnvelope["provenance"])
+	if status == AkumaInteractiveQueryStatusCompleted && len(provenanceRaw) > 0 && string(provenanceRaw) != "null" {
+		if provenanceRaw[0] != '{' {
+			return nil, &KaizenError{
+				Message: "interactive query response provenance must be an object",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		var provenance AkumaProvenance
+		if err := json.Unmarshal(provenanceRaw, &provenance); err != nil {
+			return nil, &KaizenError{
+				Message: fmt.Sprintf("decode interactive akuma provenance: %v", err),
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		// provenanceFidelity is the load-bearing field — without it a client
+		// cannot tell full from limited provenance, so an empty value on a
+		// completed envelope is a contract violation, not a tolerable gap.
+		if strings.TrimSpace(string(provenance.ProvenanceFidelity)) == "" {
+			return nil, &KaizenError{
+				Message: "interactive query response provenance missing provenanceFidelity",
+				Code:    "INVALID_RESPONSE",
+				Data:    parseAPIErrorData(data),
+			}
+		}
+		// Contract: arrays are always present (possibly empty), never nil —
+		// normalize so the typed payload honors that even if a field was
+		// omitted upstream (Claude round-1 M1).
+		normalizeAkumaProvenance(&provenance)
+		resp.Provenance = &provenance
+	}
 	if (resp.Status == AkumaInteractiveQueryStatusCompleted || resp.Status == AkumaInteractiveQueryStatusRejected) && !hasResult {
 		return nil, &KaizenError{
 			Message: "interactive query response missing result",

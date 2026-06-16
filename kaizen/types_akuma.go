@@ -94,11 +94,104 @@ type AkumaClarification struct {
 // AkumaInteractiveQueryResponse is the response from the interactive Akuma
 // query protocol. Either Result (completed/rejected) or Clarification
 // (needs_clarification) is set; future statuses pass through RawResponse only.
+// Provenance is present only on completed results that carry executed SQL.
 type AkumaInteractiveQueryResponse struct {
 	Status        AkumaInteractiveQueryStatus `json:"status"`
 	Result        *AkumaQueryResponse         `json:"result,omitempty"`
 	Clarification *AkumaClarification         `json:"clarification,omitempty"`
+	Provenance    *AkumaProvenance            `json:"provenance,omitempty"`
 	RawResponse   map[string]json.RawMessage  `json:"-"`
+}
+
+// AkumaProvenanceFidelity reports how the provenance facts were derived. The
+// field is x-extensible-enum on the server; treat unknown values as limited.
+type AkumaProvenanceFidelity string
+
+const (
+	// AkumaProvenanceFidelityFull: parser-backed extraction succeeded
+	// (postgres/mysql) — joins, filters, projections, and aggregations are
+	// deterministic facts of the executed SQL.
+	AkumaProvenanceFidelityFull AkumaProvenanceFidelity = "full"
+	// AkumaProvenanceFidelityLimited: generation-metadata fallback (other
+	// dialects, or parser failure). Parsed-fact arrays are empty; tables come
+	// from generation metadata. Do not present as equivalent to full.
+	AkumaProvenanceFidelityLimited AkumaProvenanceFidelity = "limited"
+)
+
+// AkumaProvenance is the structured, server-derived explanation of how a
+// completed result was produced. Arrays are always present (possibly empty).
+type AkumaProvenance struct {
+	ProvenanceFidelity AkumaProvenanceFidelity     `json:"provenanceFidelity"`
+	Dialect            string                      `json:"dialect"`
+	Tables             []string                    `json:"tables"`
+	Joins              []AkumaProvenanceJoin       `json:"joins"`
+	Filters            []AkumaProvenanceFilter     `json:"filters"`
+	Projections        []AkumaProvenanceProjection `json:"projections"`
+	Aggregations       AkumaProvenanceAggregations `json:"aggregations"`
+	Warnings           []AkumaProvenanceWarning    `json:"warnings"`
+}
+
+// AkumaProvenanceJoin is one join recovered from the executed SQL.
+type AkumaProvenanceJoin struct {
+	Type      string `json:"type"`
+	Left      string `json:"left,omitempty"`
+	Right     string `json:"right,omitempty"`
+	Condition string `json:"condition,omitempty"`
+}
+
+// AkumaProvenanceFilter is one WHERE/HAVING predicate recovered from the
+// executed SQL.
+type AkumaProvenanceFilter struct {
+	Clause     string `json:"clause"`
+	Expression string `json:"expression"`
+}
+
+// AkumaProvenanceProjection is one select-list entry recovered from the
+// executed SQL.
+type AkumaProvenanceProjection struct {
+	Expression string `json:"expression"`
+	Alias      string `json:"alias,omitempty"`
+}
+
+// AkumaProvenanceAggregations carries the grouping shape of the executed SQL.
+type AkumaProvenanceAggregations struct {
+	GroupBy   []string `json:"groupBy"`
+	Functions []string `json:"functions"`
+}
+
+// AkumaProvenanceWarning is an enumerated server-side provenance warning.
+// Known categories: parser_extraction_failed, dialect_provenance_limited,
+// statement_shape_unsupported; the set is additive over time.
+type AkumaProvenanceWarning struct {
+	Category string `json:"category"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+// normalizeAkumaProvenance enforces the contract's "arrays are always present
+// (possibly empty)" shape on a decoded payload, so callers can range/index
+// without nil checks.
+func normalizeAkumaProvenance(p *AkumaProvenance) {
+	if p.Tables == nil {
+		p.Tables = []string{}
+	}
+	if p.Joins == nil {
+		p.Joins = []AkumaProvenanceJoin{}
+	}
+	if p.Filters == nil {
+		p.Filters = []AkumaProvenanceFilter{}
+	}
+	if p.Projections == nil {
+		p.Projections = []AkumaProvenanceProjection{}
+	}
+	if p.Warnings == nil {
+		p.Warnings = []AkumaProvenanceWarning{}
+	}
+	if p.Aggregations.GroupBy == nil {
+		p.Aggregations.GroupBy = []string{}
+	}
+	if p.Aggregations.Functions == nil {
+		p.Aggregations.Functions = []string{}
+	}
 }
 
 // AkumaInteractiveConsumeRequest carries the consume-side fields. IdempotencyKey
