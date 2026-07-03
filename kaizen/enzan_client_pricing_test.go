@@ -29,7 +29,7 @@ func TestEnzanLivePricingAdminClientMethods(t *testing.T) {
 			_, _ = w.Write([]byte(`{"entries":[{"id":"11111111-1111-1111-1111-111111111111","kind":"on_demand","status":"success","rowsUpserted":0,"rowsSkipped":0,"durationMs":64,"startedAt":"2026-04-28T13:56:13.416941Z","finishedAt":"2026-04-28T13:56:13.483386Z","sourceId":"22222222-2222-2222-2222-222222222222","sourceName":"manual","triggeredBy":"33333333-3333-3333-3333-333333333333"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/enzan/pricing/providers":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"providers":[{"id":"44444444-4444-4444-4444-444444444444","name":"manual","kind":"manual","enabled":true,"refreshIntervalHours":24,"hasAdapter":true}]}`))
+			_, _ = w.Write([]byte(`{"providers":[{"id":"44444444-4444-4444-4444-444444444444","name":"manual","kind":"manual","enabled":true,"envAllowed":true,"effectiveEnabled":true,"manualOfferWriteEnabled":true,"requiresSecret":false,"secretConfigured":false,"credentialSource":"none","hasLegacyDbSecret":false,"refreshIntervalHours":24,"hasAdapter":true}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/enzan/pricing/offers":
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -81,6 +81,9 @@ func TestEnzanLivePricingAdminClientMethods(t *testing.T) {
 	}
 	if len(providers) != 1 || !providers[0].HasAdapter || providers[0].Kind != "manual" {
 		t.Fatalf("unexpected providers response: %+v", providers)
+	}
+	if providers[0].ManualOfferWriteEnabled == nil || !*providers[0].ManualOfferWriteEnabled {
+		t.Fatalf("expected manualOfferWriteEnabled=true, got %+v", providers[0].ManualOfferWriteEnabled)
 	}
 
 	upsertResp, err := client.Enzan.UpsertPricingOffer(ctx, &EnzanPricingOfferUpsertRequest{
@@ -490,7 +493,7 @@ func TestEnzanUpsertPricingOfferReturnsStaleWithoutPayload(t *testing.T) {
 func TestEnzanPricingProvidersHandlesOptionalFreshnessFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"providers":[{"id":"44444444-4444-4444-4444-444444444444","name":"aws","kind":"api","enabled":true,"refreshIntervalHours":24,"hasAdapter":false}]}`))
+		_, _ = w.Write([]byte(`{"providers":[{"id":"44444444-4444-4444-4444-444444444444","name":"aws","kind":"api","enabled":true,"envAllowed":true,"effectiveEnabled":false,"disabledReason":"unsupported_source","requiresSecret":false,"secretConfigured":false,"credentialSource":"none","hasLegacyDbSecret":false,"refreshIntervalHours":24,"hasAdapter":false}]}`))
 	}))
 	defer server.Close()
 
@@ -510,7 +513,51 @@ func TestEnzanPricingProvidersHandlesOptionalFreshnessFields(t *testing.T) {
 	if p.HasAdapter {
 		t.Fatalf("expected hasAdapter=false for aws in 8.2-public")
 	}
+	if p.EnvAllowed == nil || !*p.EnvAllowed {
+		t.Fatalf("expected envAllowed=true, got %+v", p.EnvAllowed)
+	}
+	if p.EffectiveEnabled == nil || *p.EffectiveEnabled {
+		t.Fatalf("expected effectiveEnabled=false, got %+v", p.EffectiveEnabled)
+	}
+	if p.RequiresSecret == nil || *p.RequiresSecret {
+		t.Fatalf("expected requiresSecret=false, got %+v", p.RequiresSecret)
+	}
+	if p.SecretConfigured == nil || *p.SecretConfigured {
+		t.Fatalf("expected secretConfigured=false, got %+v", p.SecretConfigured)
+	}
+	if p.CredentialSource == nil || *p.CredentialSource != "none" {
+		t.Fatalf("expected credentialSource=none, got %+v", p.CredentialSource)
+	}
+	if p.HasLegacyDBSecret == nil || *p.HasLegacyDBSecret {
+		t.Fatalf("expected hasLegacyDbSecret=false, got %+v", p.HasLegacyDBSecret)
+	}
 	if p.LastSuccessAt != nil || p.LastFailureAt != nil || p.LastError != nil {
 		t.Fatalf("expected freshness fields to be nil, got %+v", p)
+	}
+}
+
+func TestEnzanPricingProvidersAllowsLegacyShapeWithoutReadinessFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"providers":[{"id":"44444444-4444-4444-4444-444444444444","name":"manual","kind":"manual","enabled":true,"refreshIntervalHours":24,"hasAdapter":true}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Timeout: 2 * time.Second,
+	})
+	providers, err := client.Enzan.ListPricingProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListPricingProviders() error = %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(providers))
+	}
+	p := providers[0]
+	if p.EnvAllowed != nil || p.EffectiveEnabled != nil || p.ManualOfferWriteEnabled != nil || p.RequiresSecret != nil ||
+		p.SecretConfigured != nil || p.CredentialSource != nil || p.HasLegacyDBSecret != nil {
+		t.Fatalf("expected absent readiness fields to decode as nil, got %+v", p)
 	}
 }

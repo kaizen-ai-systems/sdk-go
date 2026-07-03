@@ -279,15 +279,23 @@ type EnzanPricingRefreshLogEntry struct {
 
 // EnzanPricingProvider is one row from enzan_pricing_sources (admin view).
 type EnzanPricingProvider struct {
-	ID                   string  `json:"id"`
-	Name                 string  `json:"name"`
-	Kind                 string  `json:"kind"`
-	Enabled              bool    `json:"enabled"`
-	RefreshIntervalHours int     `json:"refreshIntervalHours"`
-	HasAdapter           bool    `json:"hasAdapter"`
-	LastSuccessAt        *string `json:"lastSuccessAt,omitempty"`
-	LastFailureAt        *string `json:"lastFailureAt,omitempty"`
-	LastError            *string `json:"lastError,omitempty"`
+	ID                      string  `json:"id"`
+	Name                    string  `json:"name"`
+	Kind                    string  `json:"kind"`
+	Enabled                 bool    `json:"enabled"`
+	EnvAllowed              *bool   `json:"envAllowed,omitempty"`
+	EffectiveEnabled        *bool   `json:"effectiveEnabled,omitempty"`
+	ManualOfferWriteEnabled *bool   `json:"manualOfferWriteEnabled,omitempty"`
+	DisabledReason          *string `json:"disabledReason,omitempty"`
+	RequiresSecret          *bool   `json:"requiresSecret,omitempty"`
+	SecretConfigured        *bool   `json:"secretConfigured,omitempty"`
+	CredentialSource        *string `json:"credentialSource,omitempty"`
+	HasLegacyDBSecret       *bool   `json:"hasLegacyDbSecret,omitempty"`
+	RefreshIntervalHours    int     `json:"refreshIntervalHours"`
+	HasAdapter              bool    `json:"hasAdapter"`
+	LastSuccessAt           *string `json:"lastSuccessAt,omitempty"`
+	LastFailureAt           *string `json:"lastFailureAt,omitempty"`
+	LastError               *string `json:"lastError,omitempty"`
 }
 
 // BoolPtr returns a pointer to b. Convenience constructor for SDK
