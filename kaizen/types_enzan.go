@@ -322,7 +322,10 @@ func Float64Ptr(f float64) *float64 { return &f }
 // non-nil before sending so typos surface as a clear ValueError equivalent
 // rather than as a free offer in the catalog.
 type EnzanGPUOfferUpsertPayload struct {
-	Provider          string   `json:"provider"`
+	Provider string `json:"provider"`
+	// GPUType preserves the source-authored identity. A terminal -<count>x is
+	// the sole supported multi-GPU-per-instance encoding; otherwise one GPU per
+	// buyable instance is assumed.
 	GPUType           string   `json:"gpuType"`
 	DisplayName       string   `json:"displayName"`
 	Region            string   `json:"region,omitempty"`
@@ -417,6 +420,57 @@ type EnzanPricingOfferUpsertResponse struct {
 	Status string         `json:"status"`
 	GPU    *EnzanGPUOffer `json:"gpu,omitempty"`
 	LLM    *EnzanLLMOffer `json:"llm,omitempty"`
+}
+
+// EnzanPricingRankingMode selects the deterministic live-offer ranking.
+// CheapestUnderAnchor requires AnchorRateUSD; BestTrainingFit returns only
+// training-ready offers.
+type EnzanPricingRankingMode string
+
+const (
+	EnzanPricingRankCheapest            EnzanPricingRankingMode = "cheapest"
+	EnzanPricingRankCheapestUnderAnchor EnzanPricingRankingMode = "cheapest_under_anchor"
+	EnzanPricingRankBestTrainingFit     EnzanPricingRankingMode = "best_training_fit"
+	EnzanPricingRankBestAlternative     EnzanPricingRankingMode = "best_alternative"
+)
+
+// EnzanLiveOfferFilter filters active live GPU offers. MinClusterSize counts
+// buyable instances, and rate fields are hourly USD per buyable instance.
+// GPUType values may use a terminal "-<count>x" GPUs-per-instance suffix.
+type EnzanLiveOfferFilter struct {
+	GPUTypes        []string `json:"gpuTypes,omitempty"`
+	Providers       []string `json:"providers,omitempty"`
+	MinClusterSize  int      `json:"minClusterSize,omitempty"`
+	TrainingReady   bool     `json:"trainingReady,omitempty"`
+	Regions         []string `json:"regions,omitempty"`
+	CommitmentTypes []string `json:"commitmentTypes,omitempty"`
+	MaxHourlyRate   *float64 `json:"maxHourlyRate,omitempty"`
+	AnchorRateUSD   *float64 `json:"anchorRateUSD,omitempty"`
+}
+
+// EnzanPricingSearchRequest is the body for POST /v1/enzan/pricing/search.
+type EnzanPricingSearchRequest struct {
+	EnzanLiveOfferFilter
+	RankingMode EnzanPricingRankingMode `json:"rankingMode,omitempty"`
+	// Limit is optional (nil); omission defaults to 20. Explicit values must
+	// be 1 through 100 inclusive; values outside that range return HTTP 400.
+	Limit *int `json:"limit,omitempty"`
+}
+
+// EnzanPricingSearchResult is one ranked live GPU offer.
+type EnzanPricingSearchResult struct {
+	EnzanGPUOffer
+	Freshness string   `json:"freshness"`
+	Reasons   []string `json:"reasons"`
+}
+
+// EnzanPricingSearchResponse is the response from POST /v1/enzan/pricing/search.
+type EnzanPricingSearchResponse struct {
+	Filter      EnzanLiveOfferFilter       `json:"filter"`
+	Results     []EnzanPricingSearchResult `json:"results"`
+	Freshness   string                     `json:"freshness"`
+	RefreshedAt *string                    `json:"refreshedAt,omitempty"`
+	SourceMix   map[string]int             `json:"sourceMix"`
 }
 
 // APICostSummary represents estimated Akuma API token spend.
@@ -600,7 +654,7 @@ type EnzanChatRequest struct {
 
 // EnzanSuggestedAction is a typed action chip from the chat response.
 type EnzanSuggestedAction struct {
-	Type   string `json:"type"` // set_window, view_summary, view_costs_by_model, view_optimizer, view_model_pricing, view_gpu_pricing
+	Type   string `json:"type"` // set_window, view_summary, view_costs_by_model, view_optimizer, view_model_pricing, view_gpu_pricing, view_live_pricing, refresh_pricing, compare_clusters, switch_to_options
 	Label  string `json:"label"`
 	Window string `json:"window,omitempty"`
 	Model  string `json:"model,omitempty"`

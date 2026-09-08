@@ -114,6 +114,34 @@ func TestEnzanLivePricingAdminClientMethods(t *testing.T) {
 	}
 }
 
+func TestEnzanSearchPricing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/enzan/pricing/search" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), `"gpuTypes":["h100"]`) || !strings.Contains(string(body), `"providers":["runpod"]`) || !strings.Contains(string(body), `"rankingMode":"cheapest"`) {
+			t.Fatalf("unexpected request body: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"filter":{"gpuTypes":["h100"]},"results":[{"id":"1","provider":"runpod","gpuType":"h100","displayName":"H100","deploymentClass":"on_demand","clusterSizeMin":1,"interconnectClass":"unknown","trainingReady":true,"hourlyRateUSD":2.5,"currency":"USD","sourceType":"adapter","trustStatus":"verified","fetchedAt":"2026-09-02T12:00:00Z","firstSeenAt":"2026-09-02T12:00:00Z","lastSeenAt":"2026-09-02T12:00:00Z","active":true,"freshness":"fresh","reasons":["verified source"]}],"freshness":"fresh","refreshedAt":"2026-09-02T12:00:00Z","sourceMix":{"adapter":1}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test-key", Timeout: 2 * time.Second})
+	resp, err := client.Enzan.SearchPricing(context.Background(), &EnzanPricingSearchRequest{
+		EnzanLiveOfferFilter: EnzanLiveOfferFilter{GPUTypes: []string{"h100"}, Providers: []string{"runpod"}},
+		RankingMode:          EnzanPricingRankCheapest,
+	})
+	if err != nil {
+		t.Fatalf("SearchPricing() error = %v", err)
+	}
+	if resp.Freshness != "fresh" || len(resp.Results) != 1 || resp.Results[0].Provider != "runpod" || resp.SourceMix["adapter"] != 1 {
+		t.Fatalf("SearchPricing() response = %+v", resp)
+	}
+}
+
 func TestEnzanUpsertPricingOfferRejectsUnsetRateFields(t *testing.T) {
 	// Codex pass 7 finding: Go's float64 zero value would silently submit
 	// $0/hr offers from caller typos. Rate fields are *float64 and validated

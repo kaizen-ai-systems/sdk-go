@@ -304,6 +304,22 @@ func (c *EnzanClient) UpsertPricingOffer(ctx context.Context, req *EnzanPricingO
 	return &resp, nil
 }
 
+// SearchPricing returns active live GPU offers ranked by the requested mode.
+func (c *EnzanClient) SearchPricing(ctx context.Context, req *EnzanPricingSearchRequest) (*EnzanPricingSearchResponse, error) {
+	if req == nil {
+		req = &EnzanPricingSearchRequest{}
+	}
+	data, err := c.http.post(ctx, "/v1/enzan/pricing/search", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp EnzanPricingSearchResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode enzan pricing search response: %w", err)
+	}
+	return &resp, nil
+}
+
 // Burn gets current burn rate.
 func (c *EnzanClient) Burn(ctx context.Context) (*EnzanBurnResponse, error) {
 	data, err := c.http.get(ctx, "/v1/enzan/burn")
