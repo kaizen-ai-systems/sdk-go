@@ -33,7 +33,11 @@ const (
 
 // Guardrails contains security constraints for queries.
 type Guardrails struct {
-	ReadOnly    bool     `json:"readOnly,omitempty"`
+	ReadOnly bool `json:"readOnly,omitempty"`
+	// AllowTables restricts canonical physical names in all modes (empty disables).
+	// Nonempty requires postgres/mysql extraction; unsupported SQL fails closed.
+	// Qualification is exact; unquoted Postgres entries fold, quoted entries are
+	// byte-exact, and MySQL is case-sensitive. See https://www.kaizenaisystems.com/docs for limits.
 	AllowTables []string `json:"allowTables,omitempty"`
 	DenyTables  []string `json:"denyTables,omitempty"`
 	DenyColumns []string `json:"denyColumns,omitempty"`
