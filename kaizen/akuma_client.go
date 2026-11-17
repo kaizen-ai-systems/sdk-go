@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -15,7 +16,13 @@ type AkumaClient struct {
 
 // Query translates natural language to SQL.
 func (c *AkumaClient) Query(ctx context.Context, req *AkumaQueryRequest) (*AkumaQueryResponse, error) {
-	data, err := c.http.post(ctx, "/v1/akuma/query", req)
+	var body *AkumaQueryRequest
+	if req != nil {
+		copy := *req
+		copy.MetricAction = ""
+		body = &copy
+	}
+	data, err := c.http.post(ctx, "/v1/akuma/query", body)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +36,7 @@ func (c *AkumaClient) Query(ctx context.Context, req *AkumaQueryRequest) (*Akuma
 
 // QueryInteractive runs a fresh query through the interactive Akuma protocol.
 // To consume a needs_clarification response, use ConsumeClarification.
-func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaQueryRequest) (*AkumaInteractiveQueryResponse, error) {
+func (c *AkumaClient) QueryInteractive(ctx context.Context, req *AkumaInteractiveQueryRequest) (*AkumaInteractiveQueryResponse, error) {
 	data, err := c.http.post(ctx, "/v1/akuma/queries/interactive", req)
 	if err != nil {
 		return nil, err
@@ -108,6 +115,11 @@ func parseAkumaInteractiveResponse(data []byte) (*AkumaInteractiveQueryResponse,
 	resultRaw, hasResult := rawEnvelope["result"]
 	trimmedResult := bytes.TrimSpace(resultRaw)
 	resp := AkumaInteractiveQueryResponse{Status: status, RawResponse: rawEnvelope}
+	if metric := bytes.TrimSpace(rawEnvelope["metric"]); (status == AkumaInteractiveQueryStatusCompleted || status == AkumaInteractiveQueryStatusRejected || status == AkumaInteractiveQueryStatusNeedsClarification) && len(metric) > 0 && string(metric) != "null" {
+		if err := json.Unmarshal(metric, &resp.Metric); err != nil {
+			return nil, &KaizenError{Message: "decode interactive metric: " + err.Error(), Code: "INVALID_RESPONSE", Data: parseAPIErrorData(data)}
+		}
+	}
 	if len(trimmedResult) > 0 {
 		if trimmedResult[0] != '{' {
 			return nil, &KaizenError{
@@ -339,6 +351,52 @@ func (c *AkumaClient) SyncSource(ctx context.Context, sourceID string) (*AkumaSo
 	var resp AkumaSourceMutationResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("decode akuma source sync response: %w", err)
+	}
+	return &resp, nil
+}
+
+// CreateMetricDefinition saves a completed proposal or restores an owned version.
+func (c *AkumaClient) CreateMetricDefinition(ctx context.Context, req *AkumaCreateMetricDefinitionRequest) (*AkumaCreateMetricDefinitionResponse, error) {
+	if req == nil || strings.TrimSpace(req.IdempotencyKey) == "" {
+		return nil, &KaizenError{Message: "IdempotencyKey is required", Code: "INVALID_REQUEST"}
+	}
+	body := map[string]any{"sourceId": req.SourceID}
+	if req.ClarificationToken != "" {
+		body["clarificationToken"] = req.ClarificationToken
+	} else {
+		body["term"] = req.Term
+		body["restoreVersion"] = req.RestoreVersion
+		body["expectedActiveVersion"] = req.ExpectedActiveVersion
+	}
+	data, err := c.http.requestWithHeaders(ctx, "POST", "/v1/akuma/metric-definitions", body, map[string]string{"Idempotency-Key": req.IdempotencyKey})
+	if err != nil {
+		return nil, err
+	}
+	var resp AkumaCreateMetricDefinitionResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode metric definition: %w", err)
+	}
+	return &resp, nil
+}
+func (c *AkumaClient) ListMetricDefinitions(ctx context.Context, sourceID string) (*AkumaListMetricDefinitionsResponse, error) {
+	data, err := c.http.get(ctx, "/v1/akuma/metric-definitions?sourceId="+url.QueryEscape(sourceID))
+	if err != nil {
+		return nil, err
+	}
+	var resp AkumaListMetricDefinitionsResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode metric definitions: %w", err)
+	}
+	return &resp, nil
+}
+func (c *AkumaClient) ForgetMetricDefinition(ctx context.Context, id string) (*AkumaForgetMetricDefinitionResponse, error) {
+	data, err := c.http.request(ctx, "DELETE", "/v1/akuma/metric-definitions/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp AkumaForgetMetricDefinitionResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode forgotten metric definition: %w", err)
 	}
 	return &resp, nil
 }

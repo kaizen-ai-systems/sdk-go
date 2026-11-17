@@ -47,12 +47,13 @@ type Guardrails struct {
 
 // AkumaQueryRequest is the request for Akuma query.
 type AkumaQueryRequest struct {
-	Dialect    SQLDialect  `json:"dialect"`
-	Prompt     string      `json:"prompt"`
-	Mode       QueryMode   `json:"mode,omitempty"`
-	MaxRows    int         `json:"maxRows,omitempty"`
-	SourceID   string      `json:"sourceId,omitempty"`
-	Guardrails *Guardrails `json:"guardrails,omitempty"`
+	MetricAction string      `json:"metricAction,omitempty"`
+	Dialect      SQLDialect  `json:"dialect"`
+	Prompt       string      `json:"prompt"`
+	Mode         QueryMode   `json:"mode,omitempty"`
+	MaxRows      int         `json:"maxRows,omitempty"`
+	SourceID     string      `json:"sourceId,omitempty"`
+	Guardrails   *Guardrails `json:"guardrails,omitempty"`
 }
 
 // AkumaQueryResponse is the response from Akuma query.
@@ -89,6 +90,8 @@ type AkumaClarificationOption struct {
 // needs_clarification status. ClarificationToken is opaque; clients must echo
 // it verbatim on the consume call.
 type AkumaClarification struct {
+	Kind               string                     `json:"kind,omitempty"`
+	MetricCandidates   []AkumaMetricCandidate     `json:"metricCandidates,omitempty"`
 	ClarificationToken string                     `json:"clarificationToken"`
 	Question           string                     `json:"question"`
 	Options            []AkumaClarificationOption `json:"options"`
@@ -100,6 +103,7 @@ type AkumaClarification struct {
 // (needs_clarification) is set; future statuses pass through RawResponse only.
 // Provenance is present only on completed results that carry executed SQL.
 type AkumaInteractiveQueryResponse struct {
+	Metric        *AkumaMetric                `json:"metric,omitempty"`
 	Status        AkumaInteractiveQueryStatus `json:"status"`
 	Result        *AkumaQueryResponse         `json:"result,omitempty"`
 	Clarification *AkumaClarification         `json:"clarification,omitempty"`
@@ -285,3 +289,111 @@ type AkumaSourceMutationResponse struct {
 
 // AkumaSchemaResponse aliases the manual schema mutation response.
 type AkumaSchemaResponse = AkumaSourceMutationResponse
+
+// AkumaInteractiveQueryRequest aliases the original shared request type, so
+// existing QueryInteractive callers remain source-compatible. Query omits the
+// interactive-only MetricAction even when a shared request contains it.
+type AkumaInteractiveQueryRequest = AkumaQueryRequest
+
+type AkumaMetricRecipe struct {
+	Table      string             `json:"table"`
+	Measure    string             `json:"measure"`
+	DateColumn string             `json:"dateColumn"`
+	Filter     *AkumaMetricFilter `json:"filter"`
+}
+type AkumaMetricFilter struct {
+	Column string `json:"column"`
+	Keep   bool   `json:"keep"`
+}
+type AkumaMetricFieldStatus struct {
+	Table   string `json:"table"`
+	Measure string `json:"measure"`
+	Date    string `json:"date"`
+	Filter  string `json:"filter"`
+}
+type AkumaMetricCandidate struct {
+	OptionID     string                 `json:"optionId"`
+	Recipe       AkumaMetricRecipe      `json:"recipe"`
+	FieldStatus  AkumaMetricFieldStatus `json:"fieldStatus"`
+	SavedVersion *int                   `json:"savedVersion,omitempty"`
+}
+type AkumaMetricDefinition struct {
+	ID          string                 `json:"id"`
+	Term        string                 `json:"term"`
+	Version     int                    `json:"version"`
+	CreatedAt   string                 `json:"createdAt"`
+	Recipe      AkumaMetricRecipe      `json:"recipe"`
+	FieldStatus AkumaMetricFieldStatus `json:"fieldStatus"`
+}
+type AkumaMetricActive struct {
+	ID           string `json:"id"`
+	Version      int    `json:"version"`
+	RecipeDigest string `json:"recipeDigest"`
+}
+type AkumaMetricMonth struct {
+	Label        string `json:"label"`
+	Start        string `json:"start"`
+	EndExclusive string `json:"endExclusive"`
+}
+type AkumaMetricReadBackField struct {
+	Field  string `json:"field"`
+	Value  string `json:"value"`
+	Status string `json:"status"`
+}
+type AkumaMetricReadBack struct {
+	Fields      []AkumaMetricReadBackField `json:"fields"`
+	Checked     []string                   `json:"checked"`
+	NotVerified []string                   `json:"notVerified"`
+}
+
+// AkumaMetric is an additive annotation. Applied, then Reason, identify its
+// executed/note/refusal member sets; callers handle unknown reasons generically.
+type AkumaMetric struct {
+	Applied            bool                 `json:"applied"`
+	Reason             string               `json:"reason,omitempty"`
+	Detail             string               `json:"detail,omitempty"`
+	Term               string               `json:"term,omitempty"`
+	DefinitionID       string               `json:"definitionId,omitempty"`
+	Version            int                  `json:"version,omitempty"`
+	Origin             string               `json:"origin,omitempty"`
+	Recipe             *AkumaMetricRecipe   `json:"recipe,omitempty"`
+	RecipeDigest       string               `json:"recipeDigest,omitempty"`
+	SQLDigest          string               `json:"sqlDigest,omitempty"`
+	Month              *AkumaMetricMonth    `json:"month,omitempty"`
+	ReadBack           *AkumaMetricReadBack `json:"readBack,omitempty"`
+	ComputedAt         string               `json:"computedAt,omitempty"`
+	Status             string               `json:"status,omitempty"`
+	ActiveAtCompletion *AkumaMetricActive   `json:"activeAtCompletion,omitempty"`
+	CheckedAt          string               `json:"checkedAt,omitempty"`
+	CanonicalPrompt    string               `json:"canonicalPrompt,omitempty"`
+}
+
+// AkumaCreateMetricDefinitionRequest has two forms: SourceID+ClarificationToken,
+// or SourceID+Term+RestoreVersion+ExpectedActiveVersion. Restore always sends
+// ExpectedActiveVersion, including nil as JSON null. The key is a header only.
+type AkumaCreateMetricDefinitionRequest struct {
+	SourceID              string
+	ClarificationToken    string
+	Term                  string
+	RestoreVersion        int
+	ExpectedActiveVersion *int
+	IdempotencyKey        string
+}
+type AkumaCreateMetricDefinitionResponse struct {
+	Definition        AkumaMetricDefinition `json:"definition"`
+	SupersededVersion *int                  `json:"supersededVersion"`
+}
+type AkumaListMetricDefinitionsResponse struct {
+	Definitions []AkumaMetricDefinition `json:"definitions"`
+}
+type AkumaForgetMetricDefinitionResponse struct {
+	Definition AkumaMetricDefinition `json:"definition"`
+}
+
+// AkumaMetricCodeError describes only documented metric non-2xx payloads.
+// Transport errors retain this code in KaizenError.Data, never KaizenError.Code.
+type AkumaMetricCodeError struct {
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	RequestID string `json:"request_id"`
+}

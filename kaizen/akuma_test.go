@@ -761,3 +761,178 @@ func TestAkumaClientCreateSource(t *testing.T) {
 		t.Fatalf("unexpected source id: %q", resp.SourceID)
 	}
 }
+
+// Recorded by API TestRespondAkumaInteractiveMetricRefusals; fixed public I12 bodies.
+func TestAkumaMetricRecordedRefusals(t *testing.T) {
+	bodies := []string{
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_not_sure","term":"order total"},"result":{"sql":"","error":"No calculation was chosen, so no calculation ran and nothing was saved."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_no_candidate","term":"order total"},"result":{"sql":"","error":"Kaiclaw could not offer a checked calculation for this question, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_request_unrecognized"},"result":{"sql":"","error":"This question does not match the supported saved-calculation form, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_unsupported_source"},"result":{"sql":"","error":"Saved calculations need a Postgres data source, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_needs_recheck","detail":"binding_changed","term":"order total","definitionId":"saved-id","version":7},"result":{"sql":"","error":"The table or source this calculation reads has changed since it was checked, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_needs_recheck","detail":"binding_changed","term":"order total"},"result":{"sql":"","error":"The table or source this calculation reads has changed since it was checked, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_needs_recheck","detail":"recipe_invalid","term":"order total","definitionId":"saved-id","version":7},"result":{"sql":"","error":"This calculation is no longer valid or allowed for this source, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_needs_recheck","detail":"recipe_invalid","term":"order total"},"result":{"sql":"","error":"This calculation is no longer valid or allowed for this source, so no calculation ran."}}`,
+		`{"status":"rejected","metric":{"applied":false,"reason":"metric_target_unverified","term":"order total"},"result":{"sql":"","error":"Kaiclaw could not confirm which database and schemas this source currently reads, so no calculation ran and no data was returned. Try again later, or ask without a saved calculation."}}`,
+	}
+	for _, body := range bodies {
+		response, err := parseAkumaInteractiveResponse([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Status != "rejected" || response.Result == nil || response.Result.SQL != "" || response.Result.Error == "" || response.Metric == nil || response.Metric.Applied || response.RawResponse["metric"] == nil {
+			t.Fatalf("refusal=%#v", response)
+		}
+	}
+}
+
+func TestAkumaMetricTransportAndTypes(t *testing.T) {
+	definition := `{"id":"v1","term":"order total","version":1,"createdAt":"2026-11-14T00:00:00Z","recipe":{"table":"orders","measure":"total","dateColumn":"order_date","filter":null},"fieldStatus":{"table":"shown","measure":"shown","date":"shown","filter":"shown"}}`
+	created := `{"definition":` + definition + `,"supersededVersion":null}`
+	var actions []string
+	createCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		if r.Body != nil && r.Method == "POST" {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+		}
+		switch r.URL.Path {
+		case "/v1/akuma/query":
+			if body["metricAction"] != nil {
+				t.Error("legacy sent metricAction")
+			}
+			_, _ = w.Write([]byte(`{"sql":"SELECT 1"}`))
+		case "/v1/akuma/queries/interactive":
+			if body["clarificationToken"] != nil {
+				if body["metricAction"] != nil || len(body) != 2 {
+					t.Error("consume payload contains interactive-only content")
+				}
+			} else {
+				actions = append(actions, string(body["metricAction"]))
+			}
+			_, _ = w.Write([]byte(`{"status":"completed","result":{"sql":"SELECT 1"}}`))
+		case "/v1/akuma/metric-definitions":
+			if r.Method == "GET" {
+				if r.URL.Query().Get("sourceId") != "source &?" {
+					t.Error("source query encoding")
+				}
+				_, _ = w.Write([]byte(`{"definitions":[` + definition + `]}`))
+				return
+			}
+			if r.Method != "POST" || r.Header.Get("Idempotency-Key") != "metric-key" {
+				t.Error("create method/header")
+			}
+			if body["clarificationToken"] != nil {
+				if len(body) != 2 || body["expectedActiveVersion"] != nil {
+					t.Error("token form")
+				}
+			} else {
+				if len(body) != 4 || string(body["expectedActiveVersion"]) != "null" {
+					t.Error("restore must send explicit null")
+				}
+			}
+			createCount++
+			if createCount == 1 {
+				w.WriteHeader(201)
+			}
+			_, _ = w.Write([]byte(created))
+		case "/v1/akuma/metric-definitions/v1":
+			if r.Method != "DELETE" {
+				t.Error("Forget method")
+			}
+			_, _ = w.Write([]byte(`{"definition":` + definition + `}`))
+		default:
+			t.Errorf("path=%s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+	ctx := context.Background()
+	req := &AkumaQueryRequest{Dialect: DialectPostgres, Prompt: "x", MetricAction: "teach"}
+	if _, err := client.Akuma.Query(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Akuma.QueryInteractive(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	req.MetricAction = ""
+	if _, err := client.Akuma.QueryInteractive(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actions, []string{`"teach"`, ""}) {
+		t.Fatalf("actions=%v", actions)
+	}
+	if _, err := client.Akuma.ConsumeClarification(ctx, &AkumaInteractiveConsumeRequest{ClarificationToken: "token", OptionID: "c1", IdempotencyKey: "once"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := client.Akuma.CreateMetricDefinition(ctx, &AkumaCreateMetricDefinitionRequest{SourceID: "source", ClarificationToken: "token", IdempotencyKey: "metric-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Definition.CreatedAt != "2026-11-14T00:00:00Z" || first.Definition.Recipe.Filter != nil || first.SupersededVersion != nil {
+		t.Fatalf("created=%#v", first)
+	}
+	replay, err := client.Akuma.CreateMetricDefinition(ctx, &AkumaCreateMetricDefinitionRequest{SourceID: "source", ClarificationToken: "token", IdempotencyKey: "metric-key"})
+	if err != nil || !reflect.DeepEqual(first, replay) {
+		t.Fatalf("replay=%#v err=%v", replay, err)
+	}
+	if _, err := client.Akuma.CreateMetricDefinition(ctx, &AkumaCreateMetricDefinitionRequest{SourceID: "source", Term: "order total", RestoreVersion: 1, ExpectedActiveVersion: nil, IdempotencyKey: "metric-key"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := client.Akuma.ListMetricDefinitions(ctx, "source &?")
+	if err != nil || len(list.Definitions) != 1 {
+		t.Fatalf("list=%#v err=%v", list, err)
+	}
+	forget, err := client.Akuma.ForgetMetricDefinition(ctx, "v1")
+	if err != nil || forget.Definition.ID != "v1" {
+		t.Fatalf("forget=%#v err=%v", forget, err)
+	}
+	for _, filter := range []string{"null", `{"column":"excluded","keep":false}`} {
+		body := `{"status":"needs_clarification","clarification":{"clarificationToken":"token","question":"Calculation?","options":[{"id":"c1","label":"Calculation"},{"id":"not_sure","label":"Not sure"}],"expiresAt":"2030-01-01T00:00:00Z","kind":"metric_proposal","metricCandidates":[{"optionId":"c1","recipe":{"table":"orders","measure":"total","dateColumn":"order_date","filter":` + filter + `},"fieldStatus":{"table":"shown","measure":"shown","date":"shown","filter":"chosen"},"savedVersion":2}]}}`
+		out, err := parseAkumaInteractiveResponse([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Clarification.Kind != "metric_proposal" || len(out.Clarification.MetricCandidates) != 1 || out.RawResponse["clarification"] == nil {
+			t.Fatal("typed/raw candidate missing")
+		}
+		candidate := out.Clarification.MetricCandidates[0]
+		if candidate.SavedVersion == nil || *candidate.SavedVersion != 2 || (filter != "null" && (candidate.Recipe.Filter == nil || candidate.Recipe.Filter.Keep)) {
+			t.Fatalf("candidate=%#v", candidate)
+		}
+	}
+}
+func TestAkumaMetricCodesStayInTransportData(t *testing.T) {
+	for _, code := range []string{"token_not_found", "token_not_eligible", "source_mismatch", "target_unverified", "binding_changed", "recipe_invalid", "definition_changed", "idempotency_key_reused", "already_saved", "active_limit_reached", "history_limit_reached", "version_not_found", "definition_superseded", "definition_not_found", ""} {
+		t.Run(code, func(t *testing.T) {
+			status := 409
+			if code == "" {
+				status = 503
+			}
+			if code == "token_not_found" || code == "version_not_found" || code == "definition_not_found" {
+				status = 404
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				body := map[string]string{"error": "fixed text", "request_id": "req"}
+				if code != "" {
+					body["code"] = code
+				}
+				_ = json.NewEncoder(w).Encode(body)
+			}))
+			defer server.Close()
+			client := NewClient(&ClientConfig{BaseURL: server.URL, APIKey: "test"})
+			_, err := client.Akuma.ListMetricDefinitions(context.Background(), "source")
+			var apiErr *KaizenError
+			if !errors.As(err, &apiErr) || apiErr.Status != status || apiErr.Code != "" {
+				t.Fatalf("error=%#v", err)
+			}
+			got, present := apiErr.Data["code"]
+			if code != "" && got != code || code == "" && present {
+				t.Fatalf("Data=%#v", apiErr.Data)
+			}
+		})
+	}
+}
