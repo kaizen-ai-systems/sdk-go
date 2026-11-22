@@ -260,18 +260,30 @@ type AkumaCreateSourceRequest struct {
 	ConnectionString string     `json:"connectionString"`
 }
 
+// AkumaSourceAdmissionMode is the reported source admission posture.
+type AkumaSourceAdmissionMode string
+
+const (
+	AkumaSourceAdmissionModeFull          AkumaSourceAdmissionMode = "full"
+	AkumaSourceAdmissionModeProbeAssisted AkumaSourceAdmissionMode = "probe_assisted"
+	AkumaSourceAdmissionModeUnknown       AkumaSourceAdmissionMode = "unknown"
+)
+
 // AkumaSource is a persisted Akuma source.
 type AkumaSource struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Dialect       SQLDialect        `json:"dialect"`
-	IsManual      bool              `json:"isManual"`
-	TargetSchemas []string          `json:"targetSchemas"`
-	Status        AkumaSourceStatus `json:"status"`
-	LastError     string            `json:"lastError,omitempty"`
-	LastSyncedAt  string            `json:"lastSyncedAt,omitempty"`
-	CreatedAt     string            `json:"createdAt"`
-	UpdatedAt     string            `json:"updatedAt"`
+	ID                string                   `json:"id"`
+	Name              string                   `json:"name"`
+	Dialect           SQLDialect               `json:"dialect"`
+	IsManual          bool                     `json:"isManual"`
+	TargetSchemas     []string                 `json:"targetSchemas"`
+	Status            AkumaSourceStatus        `json:"status"`
+	LastError         string                   `json:"lastError,omitempty"`
+	LastSyncedAt      string                   `json:"lastSyncedAt,omitempty"`
+	CreatedAt         string                   `json:"createdAt"`
+	UpdatedAt         string                   `json:"updatedAt"`
+	AdmissionMode     AkumaSourceAdmissionMode `json:"admissionMode,omitempty"`
+	AboveCap          *bool                    `json:"aboveCap,omitempty"`
+	TableCountVisible *int                     `json:"tableCountVisible,omitempty"`
 }
 
 // AkumaSourcesResponse is the response from list sources.

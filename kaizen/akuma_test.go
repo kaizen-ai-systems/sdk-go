@@ -731,6 +731,48 @@ func TestAkumaClientConsumeClarificationRequiresFields(t *testing.T) {
 	}
 }
 
+func TestAkumaSourceAdmissionMetadataJSON(t *testing.T) {
+	var present AkumaSource
+	if err := json.Unmarshal([]byte(`{"admissionMode":"full","aboveCap":false,"tableCountVisible":0}`), &present); err != nil {
+		t.Fatal(err)
+	}
+	if string(present.AdmissionMode) != "full" || present.AboveCap == nil || *present.AboveCap || present.TableCountVisible == nil || *present.TableCountVisible != 0 {
+		t.Fatalf("present metadata=%+v", present)
+	}
+	encoded, err := json.Marshal(present)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["admissionMode"]) != `"full"` || string(raw["aboveCap"]) != "false" || string(raw["tableCountVisible"]) != "0" {
+		t.Fatalf("present wire=%s", encoded)
+	}
+	var absent AkumaSource
+	if err := json.Unmarshal([]byte(`{"id":"legacy"}`), &absent); err != nil {
+		t.Fatal(err)
+	}
+	if absent.AdmissionMode != "" || absent.AboveCap != nil || absent.TableCountVisible != nil {
+		t.Fatalf("absent metadata=%+v", absent)
+	}
+	encoded, err = json.Marshal(absent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Unmarshal into a fresh map: reusing one retains keys from the first payload.
+	raw = nil
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"admissionMode", "aboveCap", "tableCountVisible"} {
+		if _, ok := raw[key]; ok {
+			t.Fatalf("nil metadata key %s encoded in %s", key, encoded)
+		}
+	}
+}
+
 func TestAkumaClientCreateSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/akuma/sources" {
